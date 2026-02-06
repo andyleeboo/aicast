@@ -19,6 +19,8 @@ Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 ## Environment Variables
 
 - `GEMINI_API_KEY` — Google AI Studio API key (required for AI chat; without it, the Gemini client lazy-inits with an empty key)
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL (e.g. `https://<ref>.supabase.co`)
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — Supabase publishable key (format: `sb_publishable_...`). **Not** the legacy `anon` JWT — Supabase now uses publishable keys.
 - `SENTRY_DSN` — Sentry Data Source Name for server/edge error tracking
 - `NEXT_PUBLIC_SENTRY_DSN` — Sentry DSN for browser error tracking (same value as `SENTRY_DSN`)
 - `SENTRY_AUTH_TOKEN` — Sentry auth token for source map uploads (only needed in CI/production builds)
@@ -29,6 +31,7 @@ Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 - **Tailwind CSS v4** (using `@import "tailwindcss"` in globals.css, not v3 `@tailwind` directives)
 - **React Three Fiber + Three.js** for the 3D avatar
 - **Google Gemini 3** (`@google/genai`, model: `gemini-3-flash-preview`) for AI chat responses
+- **Supabase** (`@supabase/ssr` + `@supabase/supabase-js`) for auth and database. Anonymous auth is enabled.
 - Path alias: `@/*` maps to `./src/*`
 
 ## Architecture
@@ -64,6 +67,16 @@ The avatar uses a **state machine animation controller** (`FaceController`):
 - Actions are defined in `src/lib/avatar-actions.ts` with gesture tags (NOD, SHAKE, TILT) and emote tags (WINK, BLINK, SLEEP, WAKE)
 - `buildActionSystemPrompt()` generates the system prompt suffix instructing Gemini to use these tags
 - **Remote control**: REST API at `/api/avatar/actions` (GET lists actions, POST triggers one) → emits through `action-bus.ts` (in-memory pub/sub) → SSE stream at `/api/avatar/events` → client `EventSource` in `BroadcastContent`
+
+### Supabase Client (`src/utils/supabase/`)
+
+Three client factories following the `@supabase/ssr` pattern:
+
+- **`client.ts`** — `createClient()` for browser/Client Components (uses `createBrowserClient`)
+- **`server.ts`** — `async createClient()` for Server Components/Route Handlers (calls `await cookies()` internally)
+- **`middleware.ts`** — `async updateSession(request)` for the Next.js middleware; refreshes auth tokens via `supabase.auth.getUser()`
+
+The root `src/middleware.ts` calls `updateSession()` on page requests. API routes (`/api/*`) are excluded from middleware to avoid auth overhead on SSE streams and chat endpoints.
 
 ### Design Tokens
 
