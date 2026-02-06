@@ -9,16 +9,21 @@ AI live streaming platform (Twitch for AI). Viewers watch AI-generated broadcast
 ## Commands
 
 ```bash
-yarn dev          # Start dev server at localhost:3000
-yarn build        # Production build
-yarn lint         # ESLint (flat config, eslint.config.mjs)
+bun dev           # Start dev server at localhost:3000
+bun run build     # Production build
+bun lint          # ESLint (flat config, eslint.config.mjs)
 ```
 
-Both `yarn.lock` and `bun.lock` exist; use yarn as the primary package manager.
+Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 
 ## Environment Variables
 
 - `GEMINI_API_KEY` — Google AI Studio API key (required for AI chat; without it, the Gemini client lazy-inits with an empty key)
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL (e.g. `https://<ref>.supabase.co`)
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — Supabase publishable key (format: `sb_publishable_...`). **Not** the legacy `anon` JWT — Supabase now uses publishable keys.
+- `SENTRY_DSN` — Sentry Data Source Name for server/edge error tracking
+- `NEXT_PUBLIC_SENTRY_DSN` — Sentry DSN for browser error tracking (same value as `SENTRY_DSN`)
+- `SENTRY_AUTH_TOKEN` — Sentry auth token for source map uploads (only needed in CI/production builds)
 
 ## Tech Stack
 
@@ -26,6 +31,7 @@ Both `yarn.lock` and `bun.lock` exist; use yarn as the primary package manager.
 - **Tailwind CSS v4** (using `@import "tailwindcss"` in globals.css, not v3 `@tailwind` directives)
 - **React Three Fiber + Three.js** for the 3D avatar
 - **Google Gemini 3** (`@google/genai`, model: `gemini-3-flash-preview`) for AI chat responses
+- **Supabase** (`@supabase/ssr` + `@supabase/supabase-js`) for auth and database. Anonymous auth is enabled.
 - Path alias: `@/*` maps to `./src/*`
 
 ## Architecture
@@ -62,6 +68,16 @@ The avatar uses a **state machine animation controller** (`FaceController`):
 - `buildActionSystemPrompt()` generates the system prompt suffix instructing Gemini to use these tags
 - **Remote control**: REST API at `/api/avatar/actions` (GET lists actions, POST triggers one) → emits through `action-bus.ts` (in-memory pub/sub) → SSE stream at `/api/avatar/events` → client `EventSource` in `BroadcastContent`
 
+### Supabase Client (`src/utils/supabase/`)
+
+Three client factories following the `@supabase/ssr` pattern:
+
+- **`client.ts`** — `createClient()` for browser/Client Components (uses `createBrowserClient`)
+- **`server.ts`** — `async createClient()` for Server Components/Route Handlers (calls `await cookies()` internally)
+- **`middleware.ts`** — `async updateSession(request)` for the Next.js middleware; refreshes auth tokens via `supabase.auth.getUser()`
+
+The root `src/middleware.ts` calls `updateSession()` on page requests. API routes (`/api/*`) are excluded from middleware to avoid auth overhead on SSE streams and chat endpoints.
+
 ### Design Tokens
 
 Dark theme only (hardcoded `<html class="dark">`). Colors defined as CSS custom properties in `globals.css` and mapped to Tailwind v4 theme via `@theme inline`. Key tokens: `--accent: #9147ff` (purple), `--live: #eb0400` (red), `--surface: #18181b`.
@@ -78,7 +94,7 @@ git worktree add .worktrees/<name> -b <branch-name>
 git worktree add .worktrees/chat-streaming -b feature/chat-streaming
 ```
 
-Then work inside `.worktrees/<name>/` — it's a full checkout with its own `node_modules` (run `yarn install` after creating).
+Then work inside `.worktrees/<name>/` — it's a full checkout with its own `node_modules` (run `bun install` after creating).
 
 ### Opening a PR from a worktree
 
@@ -100,7 +116,7 @@ git branch -d <branch-name>
 - **Never commit from the main checkout** for feature work — always use a worktree
 - Each worktree = one branch = one PR
 - The main checkout stays on `main` and is used for reviews, rebases, and running the app
-- Run `yarn install` inside each new worktree (they don't share `node_modules`)
+- Run `bun install` inside each new worktree (they don't share `node_modules`)
 
 ## Conventions
 

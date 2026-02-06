@@ -3,6 +3,7 @@ import { fetchGesture, type QuaternionSample } from "./gesture-data";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 // ─── FacePose ────────────────────────────────────────────────────────
+// leftLidOpen / rightLidOpen: 1.0 = fully open, 0.0 = fully closed
 
 export interface FacePose {
   headQuat: THREE.Quaternion;
@@ -148,6 +149,10 @@ const _axisZ = new THREE.Vector3(0, 0, 1);
 const _qA = new THREE.Quaternion();
 const _qB = new THREE.Quaternion();
 const _qSleepTarget = new THREE.Quaternion().setFromAxisAngle(_axisX, -0.44);
+
+// Lid constants: 1.0 = open, 0.0 = closed
+const LID_OPEN = 1.0;
+const LID_CLOSED = 0.0;
 
 // ─── AnimationState interface ────────────────────────────────────────
 
@@ -337,8 +342,8 @@ class GestureState implements AnimationState {
 
     if (elapsed >= this.duration) {
       sampleToQuat(s[s.length - 1], outPose.headQuat);
-      outPose.leftLidOpen = 1;
-      outPose.rightLidOpen = 1;
+      outPose.leftLidOpen = LID_OPEN;
+      outPose.rightLidOpen = LID_OPEN;
       this.applyGestureExpression(outPose);
       return { nextState: "idle", blendOut: 0.25 };
     }
@@ -347,8 +352,8 @@ class GestureState implements AnimationState {
     sampleToQuat(a, _qA);
     sampleToQuat(b, _qB);
     outPose.headQuat.copy(_qA).slerp(_qB, frac);
-    outPose.leftLidOpen = 1;
-    outPose.rightLidOpen = 1;
+    outPose.leftLidOpen = LID_OPEN;
+    outPose.rightLidOpen = LID_OPEN;
     this.applyGestureExpression(outPose);
 
     return null;
@@ -362,9 +367,11 @@ class GestureState implements AnimationState {
 
 // ─── WinkState ───────────────────────────────────────────────────────
 
+const WINK_CLOSE_DURATION = 0.08; // smooth close for the winking eye
 const WINK_TILT_IN = 0.3;
 const WINK_HOLD = 2.0;
 const WINK_TILT_OUT = 0.3;
+const WINK_OPEN_DURATION = 0.08; // smooth open at the end
 const WINK_TILT_ANGLE = 0.18;
 const WINK_TOTAL = WINK_TILT_IN + WINK_HOLD + WINK_TILT_OUT;
 
@@ -390,16 +397,32 @@ class WinkState implements AnimationState {
   ): TransitionRequest | null {
     if (elapsed >= WINK_TOTAL) {
       outPose.headQuat.copy(this.entryQuat);
-      outPose.leftLidOpen = 1;
-      outPose.rightLidOpen = 1;
       resetExpression(outPose);
+      outPose.leftLidOpen = LID_OPEN;
+      outPose.rightLidOpen = LID_OPEN;
       return { nextState: "idle", blendOut: 0.2 };
     }
 
-    // right eye closed entire time
-    outPose.rightLidOpen = 0;
-    outPose.leftLidOpen = 1;
+    // right eye closed entire time, left eye open
+    outPose.rightLidOpen = LID_CLOSED;
+    outPose.leftLidOpen = LID_OPEN;
 
+    // Right eye: smooth close at start, smooth open at end, closed during hold
+    if (elapsed < WINK_CLOSE_DURATION) {
+      // Smoothly close the right eye
+      const t = easeOutQuad(elapsed / WINK_CLOSE_DURATION);
+      outPose.rightLidOpen = LID_OPEN + (LID_CLOSED - LID_OPEN) * t;
+    } else if (elapsed >= WINK_TOTAL - WINK_OPEN_DURATION) {
+      // Smoothly re-open the right eye
+      const t = easeOutQuad(
+        (elapsed - (WINK_TOTAL - WINK_OPEN_DURATION)) / WINK_OPEN_DURATION,
+      );
+      outPose.rightLidOpen = LID_CLOSED + (LID_OPEN - LID_CLOSED) * t;
+    } else {
+      outPose.rightLidOpen = LID_CLOSED;
+    }
+
+    // Head tilt animation (unchanged logic)
     if (elapsed < WINK_TILT_IN) {
       const t = easeOutQuad(elapsed / WINK_TILT_IN);
       outPose.headQuat.copy(this.entryQuat).slerp(this.tiltTarget, t);
@@ -436,7 +459,11 @@ class WinkState implements AnimationState {
 
 // ─── BlinkEmoteState ─────────────────────────────────────────────────
 
-const BLINK_EMOTE_DURATION = 0.15;
+const BLINK_EMOTE_CLOSE = 0.06; // time to close lids
+const BLINK_EMOTE_HOLD = 0.06; // hold closed
+const BLINK_EMOTE_OPEN = 0.06; // time to re-open
+const BLINK_EMOTE_TOTAL =
+  BLINK_EMOTE_CLOSE + BLINK_EMOTE_HOLD + BLINK_EMOTE_OPEN;
 
 class BlinkEmoteState implements AnimationState {
   readonly name = "blinkEmote";
@@ -454,21 +481,31 @@ class BlinkEmoteState implements AnimationState {
     outPose: FacePose,
   ): TransitionRequest | null {
     outPose.headQuat.copy(this.frozenQuat);
-
-    // Hold current expression values during blink
     resetExpression(outPose);
-    outPose.leftPupilOffset.set(0, 0);
-    outPose.rightPupilOffset.set(0, 0);
 
-    if (elapsed < BLINK_EMOTE_DURATION) {
-      outPose.leftLidOpen = 0;
-      outPose.rightLidOpen = 0;
-      return null;
+    let lidOpen: number;
+    if (elapsed < BLINK_EMOTE_CLOSE) {
+      // Closing phase — ease in (accelerate shut)
+      const t = easeInQuad(elapsed / BLINK_EMOTE_CLOSE);
+      lidOpen = LID_OPEN + (LID_CLOSED - LID_OPEN) * t;
+    } else if (elapsed < BLINK_EMOTE_CLOSE + BLINK_EMOTE_HOLD) {
+      // Hold closed
+      lidOpen = LID_CLOSED;
+    } else if (elapsed < BLINK_EMOTE_TOTAL) {
+      // Opening phase — ease out (decelerate open)
+      const t = easeOutQuad(
+        (elapsed - BLINK_EMOTE_CLOSE - BLINK_EMOTE_HOLD) / BLINK_EMOTE_OPEN,
+      );
+      lidOpen = LID_CLOSED + (LID_OPEN - LID_CLOSED) * t;
+    } else {
+      outPose.leftLidOpen = LID_OPEN;
+      outPose.rightLidOpen = LID_OPEN;
+      return { nextState: "idle", blendOut: 0 };
     }
 
-    outPose.leftLidOpen = 1;
-    outPose.rightLidOpen = 1;
-    return { nextState: "idle", blendOut: 0 };
+    outPose.leftLidOpen = lidOpen;
+    outPose.rightLidOpen = lidOpen;
+    return null;
   }
 
   exit(): void {}
@@ -541,9 +578,12 @@ class SleepState implements AnimationState {
 
       outPose.headQuat.copy(this.entryQuat).slerp(_qSleepTarget, eased);
 
-      // Eyes close partway through the sleep enter
-      outPose.leftLidOpen = t > 0.3 ? 0 : 1;
-      outPose.rightLidOpen = t > 0.3 ? 0 : 1;
+      // Smoothly close eyes over the first 50% of entering
+      const lidCloseT = Math.min(t / 0.5, 1.0);
+      const lidEased = easeInQuad(lidCloseT);
+      const lidVal = LID_OPEN + (LID_CLOSED - LID_OPEN) * lidEased;
+      outPose.leftLidOpen = lidVal;
+      outPose.rightLidOpen = lidVal;
 
       this.applySleepExpression(outPose);
 
@@ -560,8 +600,8 @@ class SleepState implements AnimationState {
       _qA.setFromAxisAngle(_axisX, breathOffset);
       outPose.headQuat.copy(_qSleepTarget).multiply(_qA);
 
-      outPose.leftLidOpen = 0;
-      outPose.rightLidOpen = 0;
+      outPose.leftLidOpen = LID_CLOSED;
+      outPose.rightLidOpen = LID_CLOSED;
       this.applySleepExpression(outPose);
       return null;
     }
@@ -577,23 +617,22 @@ class SleepState implements AnimationState {
 
     outPose.headQuat.copy(this.exitStartQuat).slerp(_qA.identity(), eased);
 
-    // Eyes open halfway through the wake animation
-    outPose.leftLidOpen = t > 0.5 ? 1 : 0;
-    outPose.rightLidOpen = t > 0.5 ? 1 : 0;
+    // Smoothly open eyes starting at 30% of exit duration
+    const lidOpenT = Math.max(0, (t - 0.3) / 0.7);
+    const lidEased = easeOutQuad(Math.min(lidOpenT, 1.0));
+    const lidVal = LID_CLOSED + (LID_OPEN - LID_CLOSED) * lidEased;
+    outPose.leftLidOpen = lidVal;
+    outPose.rightLidOpen = lidVal;
 
     // Blend expression from sleep to neutral during exit
-    const sleepBrowAngle = -0.15;
-    outPose.leftBrowAngle = sleepBrowAngle * (1 - eased);
-    outPose.rightBrowAngle = sleepBrowAngle * (1 - eased);
-    outPose.leftBrowY = -0.03 * (1 - eased);
-    outPose.rightBrowY = -0.03 * (1 - eased);
-    outPose.mouthCurve = 0;
-    outPose.mouthOpen = 0.05 * (1 - eased);
-    outPose.mouthWidth = 0.9 + 0.1 * eased;
-    outPose.leftPupilOffset.set(0, 0);
-    outPose.rightPupilOffset.set(0, 0);
-    outPose.leftPupilScale = 1;
-    outPose.rightPupilScale = 1;
+    if (t < 0.5) {
+      this.applySleepExpression(outPose);
+    } else {
+      resetExpression(outPose);
+      // Override lid values since resetExpression sets them to 1
+      outPose.leftLidOpen = lidVal;
+      outPose.rightLidOpen = lidVal;
+    }
 
     if (t >= 1) {
       this.sleeping = false;
@@ -899,6 +938,12 @@ export interface UpdateResult {
   emoteCompleted: boolean;
 }
 
+// Idle blink timing
+const IDLE_BLINK_CLOSE = 0.05; // time to close
+const IDLE_BLINK_HOLD = 0.04; // hold shut
+const IDLE_BLINK_OPEN = 0.06; // time to re-open
+const IDLE_BLINK_TOTAL = IDLE_BLINK_CLOSE + IDLE_BLINK_HOLD + IDLE_BLINK_OPEN;
+
 export class FaceController {
   // States (persistent singletons)
   private idleState = new IdleState();
@@ -923,7 +968,6 @@ export class FaceController {
   // Idle blink overlay (runs when activeState.controlsEyes === false)
   private nextBlinkTime = 3 + Math.random() * 2;
   private blinkStart = -1;
-  private readonly BLINK_DURATION = 0.15;
 
   // Entrance animation
   private entranceStart = -1;
@@ -1069,12 +1113,30 @@ export class FaceController {
 
       if (this.blinkStart >= 0) {
         const blinkElapsed = now - this.blinkStart;
-        if (blinkElapsed < this.BLINK_DURATION) {
-          this.outputPose.leftLidOpen = 0;
-          this.outputPose.rightLidOpen = 0;
+
+        if (blinkElapsed < IDLE_BLINK_CLOSE) {
+          // Closing
+          const t = easeInQuad(blinkElapsed / IDLE_BLINK_CLOSE);
+          const lidVal = LID_OPEN + (LID_CLOSED - LID_OPEN) * t;
+          this.outputPose.leftLidOpen = lidVal;
+          this.outputPose.rightLidOpen = lidVal;
+        } else if (blinkElapsed < IDLE_BLINK_CLOSE + IDLE_BLINK_HOLD) {
+          // Hold closed
+          this.outputPose.leftLidOpen = LID_CLOSED;
+          this.outputPose.rightLidOpen = LID_CLOSED;
+        } else if (blinkElapsed < IDLE_BLINK_TOTAL) {
+          // Opening
+          const t = easeOutQuad(
+            (blinkElapsed - IDLE_BLINK_CLOSE - IDLE_BLINK_HOLD) /
+              IDLE_BLINK_OPEN,
+          );
+          const lidVal = LID_CLOSED + (LID_OPEN - LID_CLOSED) * t;
+          this.outputPose.leftLidOpen = lidVal;
+          this.outputPose.rightLidOpen = lidVal;
         } else {
-          this.outputPose.leftLidOpen = 1;
-          this.outputPose.rightLidOpen = 1;
+          // Blink finished
+          this.outputPose.leftLidOpen = LID_OPEN;
+          this.outputPose.rightLidOpen = LID_OPEN;
           this.blinkStart = -1;
           this.nextBlinkTime = now + 3 + Math.random() * 2;
         }

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { primaryChannel } from "@/lib/mock-data";
+import { ViewerCount } from "@/components/viewer-count";
 
 export default function Home() {
-  const { streamer, viewerCount } = primaryChannel;
+  const { streamer } = primaryChannel;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -26,7 +27,7 @@ export default function Home() {
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-live" />
             </span>
             <span className="text-sm font-medium text-live">
-              Live now — {viewerCount.toLocaleString()} watching
+              Live now — <ViewerCount channelId="late-night-ai" /> watching
             </span>
           </div>
 

@@ -1,4 +1,5 @@
 import { Channel } from "./types";
+import { createServerSupabaseClient } from "./supabase-server";
 
 export const primaryChannel: Channel = {
   id: "late-night-ai",
@@ -6,7 +7,6 @@ export const primaryChannel: Channel = {
   description:
     "Your favorite AI talk show — hot takes, internet drama, and unhinged audience Q&A. Live every night.",
   category: "Talk Show",
-  viewerCount: 7234,
   isLive: true,
   thumbnailUrl: "/thumbnails/talkshow.svg",
   streamer: {
@@ -32,4 +32,42 @@ Your style:
 export function getChannel(id: string): Channel | undefined {
   if (id === primaryChannel.id) return primaryChannel;
   return undefined;
+}
+
+export async function getChannelFromDB(
+  id: string,
+): Promise<Channel | undefined> {
+  const supabase = createServerSupabaseClient();
+
+  const { data: channel } = await supabase
+    .from("channels")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (!channel) return undefined;
+
+  const { data: streamer } = await supabase
+    .from("streamers")
+    .select("*")
+    .eq("channel_id", id)
+    .single();
+
+  if (!streamer) return undefined;
+
+  return {
+    id: channel.id,
+    name: channel.name,
+    description: channel.description,
+    category: channel.category,
+    isLive: channel.is_live,
+    thumbnailUrl: channel.thumbnail_url,
+    streamer: {
+      id: streamer.id,
+      name: streamer.name,
+      personality: streamer.personality,
+      avatarUrl: streamer.avatar_url,
+      model: streamer.model as "flash" | "pro",
+    },
+  };
 }

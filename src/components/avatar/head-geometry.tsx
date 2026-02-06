@@ -2,6 +2,9 @@ import { forwardRef } from "react";
 import * as THREE from "three";
 import { Text } from "@react-three/drei";
 
+// curveRadius is a valid troika-three-text prop but not in drei's TS types
+const CURVE_PROPS = { curveRadius: 1.0 } as Record<string, unknown>;
+
 // Pre-create materials to avoid re-creation on every render
 const skinMaterial = new THREE.MeshPhongMaterial({
   color: new THREE.Color(0.95, 0.85, 0.75),
@@ -39,7 +42,7 @@ export const HeadGeometry = forwardRef<THREE.Group, HeadGeometryProps>(
             color="black"
             anchorX="center"
             anchorY="middle"
-            curveRadius={1.0}
+            {...CURVE_PROPS}
           >
             *
           </Text>
@@ -52,7 +55,7 @@ export const HeadGeometry = forwardRef<THREE.Group, HeadGeometryProps>(
             color="black"
             anchorX="center"
             anchorY="middle"
-            curveRadius={1.0}
+            {...CURVE_PROPS}
           >
             *
           </Text>
@@ -65,7 +68,7 @@ export const HeadGeometry = forwardRef<THREE.Group, HeadGeometryProps>(
             color="black"
             anchorX="center"
             anchorY="middle"
-            curveRadius={1.0}
+            {...CURVE_PROPS}
           >
             _
           </Text>

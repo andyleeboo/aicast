@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { getSupabase } from "@/lib/supabase";
+import { validateMessage } from "@/lib/moderation";
+import { dbRowToChatMessage } from "@/lib/types";
 import type {
   ChatMessage,
+  MessageRow,
   GestureReaction,
   EmoteCommand,
   BatchedChatMessage,
@@ -48,40 +52,36 @@ const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureRe
 };
 
 export function ChatPanel({
+  channelId,
   streamerId,
   streamerName,
+  username,
   onAIResponse,
   onEmote,
   onSpeechBubble,
   onAudioData,
+  onUserInteraction,
   isSpeaking,
 }: {
+  channelId: string;
   streamerId: string;
   streamerName: string;
+  username: string;
   onAIResponse?: (gesture: GestureReaction) => void;
   onEmote?: (emote: EmoteCommand) => void;
   onSpeechBubble?: (text: string | null) => void;
   onAudioData?: (data: string) => void;
+  onUserInteraction?: () => void;
   isSpeaking?: boolean;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: `Welcome to the stream, chat! I'm ${streamerName}. Ask me anything, roast me, or just hang out. Let's go.`,
-      timestamp: Date.now(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [username, setUsername] = useState("");
-  const [usernameConfirmed, setUsernameConfirmed] = useState(false);
-  const [nameInput, setNameInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const batchQueue = useRef<BatchedChatMessage[]>([]);
   const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const conversationHistory = useRef<ChatMessage[]>([]);
   const messagesRef = useRef(messages);
 
   // Keep messagesRef in sync with messages state
@@ -96,6 +96,56 @@ export function ChatPanel({
       behavior: "smooth",
     });
   }, [messages]);
+
+  // Load initial messages + subscribe to Realtime
+  useEffect(() => {
+    let mounted = true;
+    const supabase = getSupabase();
+
+    // Load last 50 messages
+    async function loadMessages() {
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("channel_id", channelId)
+        .order("created_at", { ascending: true })
+        .limit(50);
+
+      if (mounted && data) {
+        setMessages(data.map(dbRowToChatMessage));
+      }
+    }
+
+    loadMessages();
+
+    // Subscribe to new messages via Realtime
+    const channel = supabase
+      .channel(`messages:${channelId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `channel_id=eq.${channelId}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageRow;
+          const msg = dbRowToChatMessage(row);
+          setMessages((prev) => {
+            // Skip if we already have this message
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [channelId]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -114,9 +164,18 @@ export function ChatPanel({
     // Wake the avatar when real messages come in
     onEmote?.("wake");
 
-    // Build the batch text for conversation history
-    const batchLines = batch.map((m) => `${m.username}: ${m.content}`);
-    const batchText = `[CHAT BATCH - ${batch.length} message(s)]\n${batchLines.join("\n")}`;
+    // Build conversation history from recent messages for Gemini context
+    const recentMessages = messagesRef.current.slice(-20);
+    const history: ChatMessage[] = recentMessages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.role === "user" && m.username
+          ? `${m.username}: ${m.content}`
+          : m.content,
+        timestamp: m.timestamp,
+      }));
 
     setLoading(true);
 
@@ -127,7 +186,7 @@ export function ChatPanel({
         body: JSON.stringify({
           batch,
           streamerId,
-          history: conversationHistory.current,
+          history,
         }),
       });
 
@@ -138,31 +197,8 @@ export function ChatPanel({
 
       const data = (await res.json()) as ChatResponse;
 
-      // Update conversation history with this batch turn
-      conversationHistory.current = [
-        ...conversationHistory.current,
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          content: batchText,
-          timestamp: Date.now(),
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.response,
-          timestamp: Date.now(),
-        },
-      ];
-
-      const aiMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.response,
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, aiMsg]);
+      // AI response message arrives via Realtime subscription (inserted by API route)
+      // We only use HTTP response for gesture/emote/audio callbacks
       onAIResponse?.(data.gesture);
       onSpeechBubble?.(data.response);
       if (data.audioData) {
@@ -188,9 +224,10 @@ export function ChatPanel({
     }
   }, [streamerId, onAIResponse, onEmote, onSpeechBubble, onAudioData]);
 
-  function send() {
+  async function send() {
     const text = input.trim();
     if (!text) return;
+    onUserInteraction?.();
 
     // Check for slash commands — bypass queue entirely
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
@@ -208,20 +245,28 @@ export function ChatPanel({
       return;
     }
 
-    // Regular message — add to display immediately
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: text,
-      timestamp: Date.now(),
-      username,
-    };
-    setMessages((prev) => [...prev, userMsg]);
+    // Client-side moderation
+    const check = validateMessage(text);
+    if (!check.valid) {
+      setError(check.error ?? "Message rejected");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    setError(null);
     setInput("");
 
-    // Enqueue for batch
+    // INSERT user message into Supabase — it appears via Realtime for all viewers
+    await getSupabase().from("messages").insert({
+      channel_id: channelId,
+      role: "user",
+      content: text,
+      username,
+    });
+
+    // Enqueue for batch (AI response)
     const batchMsg: BatchedChatMessage = {
-      id: userMsg.id,
+      id: crypto.randomUUID(),
       username,
       content: text,
       timestamp: Date.now(),
@@ -233,13 +278,6 @@ export function ChatPanel({
     if (!batchTimer.current) {
       batchTimer.current = setTimeout(flushBatch, BATCH_WINDOW_MS);
     }
-  }
-
-  function confirmUsername() {
-    const name = nameInput.trim();
-    if (!name) return;
-    setUsername(name);
-    setUsernameConfirmed(true);
   }
 
   function formatTime(ts: number) {
@@ -277,7 +315,7 @@ export function ChatPanel({
                     }`}
                   >
                     {msg.role === "user"
-                      ? msg.username || "You"
+                      ? msg.username || "Anon"
                       : streamerName}
                   </span>
                   <span className="text-muted">: </span>
@@ -286,15 +324,14 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {(loading || isSpeaking) && (
-            <div className="text-sm">
-              <span className="font-semibold text-accent">{streamerName}</span>
-              <span className="text-muted"> {isSpeaking ? "is speaking" : "is typing"}</span>
-              <span className="inline-flex ml-0.5">
-                <span className="animate-bounce text-muted [animation-delay:0ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:150ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:300ms]">.</span>
-              </span>
+          {messages.length === 0 && !loading && (
+            <div className="text-center text-xs text-muted/60 py-8">
+              No messages yet — say something!
+            </div>
+          )}
+          {loading && (
+            <div className="text-xs text-muted/60 italic">
+              {streamerName} is reading chat...
             </div>
           )}
         </div>
@@ -302,54 +339,31 @@ export function ChatPanel({
 
       {/* Input */}
       <div className="border-t border-border p-3">
-        {!usernameConfirmed ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              confirmUsername();
-            }}
-            className="flex gap-2"
-          >
-            <input
-              type="text"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder="Enter your name to chat..."
-              maxLength={20}
-              className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
-            />
-            <button
-              type="submit"
-              disabled={!nameInput.trim()}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Join
-            </button>
-          </form>
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send();
-            }}
-            className="flex gap-2"
-          >
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Send a message..."
-              className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Chat
-            </button>
-          </form>
+        {error && (
+          <p className="mb-2 text-xs text-red-400">{error}</p>
         )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+          className="flex gap-2"
+        >
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Send a message..."
+            className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Chat
+          </button>
+        </form>
       </div>
     </div>
   );
