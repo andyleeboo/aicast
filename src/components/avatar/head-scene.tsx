@@ -2,6 +2,7 @@ import { useRef, useEffect } from "react";
 import * as THREE from "three";
 import { HeadGeometry } from "./head-geometry";
 import { useFaceAnimation } from "./use-face-animation";
+import type { ScenePose } from "./face-controller";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface HeadSceneProps {
@@ -10,6 +11,7 @@ interface HeadSceneProps {
   emote: { command: EmoteCommand; key: number } | null;
   onEmoteComplete: () => void;
   isSpeaking: boolean;
+  scenePose?: Partial<ScenePose> | null;
 }
 
 export function HeadScene({
@@ -18,21 +20,23 @@ export function HeadScene({
   emote,
   onEmoteComplete,
   isSpeaking,
+  scenePose,
 }: HeadSceneProps) {
   const headRef = useRef<THREE.Group>(null);
   const leftEyeRef = useRef<THREE.Mesh>(null);
   const rightEyeRef = useRef<THREE.Mesh>(null);
   const mouthRef = useRef<THREE.Mesh>(null);
 
-  const { playGesture, triggerEmote, isSleeping } = useFaceAnimation({
-    headRef,
-    leftEyeRef,
-    rightEyeRef,
-    mouthRef,
-    onGestureComplete,
-    onEmoteComplete,
-    isSpeaking,
-  });
+  const { playGesture, triggerEmote, isSleeping, setScenePose, resetScenePose } =
+    useFaceAnimation({
+      headRef,
+      leftEyeRef,
+      rightEyeRef,
+      mouthRef,
+      onGestureComplete,
+      onEmoteComplete,
+      isSpeaking,
+    });
 
   // Trigger gestures (skip during sleep)
   useEffect(() => {
@@ -47,6 +51,15 @@ export function HeadScene({
       triggerEmote(emote.command);
     }
   }, [emote, triggerEmote]);
+
+  // Apply scene pose changes
+  useEffect(() => {
+    if (scenePose) {
+      setScenePose(scenePose);
+    } else {
+      resetScenePose();
+    }
+  }, [scenePose, setScenePose, resetScenePose]);
 
   return (
     <>

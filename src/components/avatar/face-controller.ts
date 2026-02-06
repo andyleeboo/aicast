@@ -141,6 +141,17 @@ function easeInQuad(t: number): number {
   return t * t;
 }
 
+// ─── Scene Pose (position + scale, independent of face) ─────────────
+
+export interface ScenePose {
+  x: number;
+  y: number;
+  z: number;
+  scale: number;
+}
+
+export const DEFAULT_SCENE_POSE: ScenePose = { x: 0, y: 0, z: 0, scale: 1 };
+
 // ─── Pre-allocated THREE temps (module scope, zero GC) ───────────────
 
 const _axisX = new THREE.Vector3(1, 0, 0);
@@ -977,6 +988,22 @@ export class FaceController {
   // Speaking state (set externally each frame)
   isSpeakingFlag = false;
 
+  // Scene pose (position + scale, smooth lerp)
+  private sceneTarget: ScenePose = { ...DEFAULT_SCENE_POSE };
+  private sceneCurrent: ScenePose = { ...DEFAULT_SCENE_POSE };
+  private readonly SCENE_LERP_SPEED = 4; // Higher = snappier
+
+  setScenePose(pose: Partial<ScenePose>): void {
+    if (pose.x !== undefined) this.sceneTarget.x = pose.x;
+    if (pose.y !== undefined) this.sceneTarget.y = pose.y;
+    if (pose.z !== undefined) this.sceneTarget.z = pose.z;
+    if (pose.scale !== undefined) this.sceneTarget.scale = pose.scale;
+  }
+
+  resetScenePose(): void {
+    this.sceneTarget = { ...DEFAULT_SCENE_POSE };
+  }
+
   constructor() {
     this.idleState.enter(this.outputPose);
   }
@@ -1163,6 +1190,19 @@ export class FaceController {
     // Mouth: use text from pose, override when speaking
     const mo = rig.mouth as unknown as { text: string };
     mo.text = p.mouthText;
+
+    // ── Scene pose: smooth lerp position + scale ─────────────────
+    const lerpFactor = 1 - Math.exp(-this.SCENE_LERP_SPEED * clampedDt);
+    this.sceneCurrent.x += (this.sceneTarget.x - this.sceneCurrent.x) * lerpFactor;
+    this.sceneCurrent.y += (this.sceneTarget.y - this.sceneCurrent.y) * lerpFactor;
+    this.sceneCurrent.z += (this.sceneTarget.z - this.sceneCurrent.z) * lerpFactor;
+    this.sceneCurrent.scale += (this.sceneTarget.scale - this.sceneCurrent.scale) * lerpFactor;
+
+    rig.head.position.set(this.sceneCurrent.x, this.sceneCurrent.y, this.sceneCurrent.z);
+    if (this.entranceDone) {
+      const s = this.sceneCurrent.scale;
+      rig.head.scale.set(s, s, s);
+    }
 
     return result;
   }

@@ -5,6 +5,8 @@ import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
 import { UsernameModal } from "./username-modal";
 import { useAudioPlayer } from "@/hooks/use-audio-player";
+import { getSkill } from "@/lib/avatar-actions";
+import type { ScenePose } from "./avatar/face-controller";
 import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface BroadcastContentProps {
@@ -27,6 +29,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [muted, setMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [latestAiMessage, setLatestAiMessage] = useState<AiMessage | null>(null);
+  const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
+  const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [username, setUsername] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return localStorage.getItem(USERNAME_KEY);
@@ -124,6 +128,31 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setEmote(null);
   }, [fireEmote]);
 
+  const activateSkill = useCallback((skillId: string) => {
+    const skill = getSkill(skillId);
+    if (!skill) return;
+
+    // Set scene pose
+    const pose: Partial<ScenePose> = {};
+    if (skill.position) {
+      pose.x = skill.position[0];
+      pose.y = skill.position[1];
+      pose.z = skill.position[2];
+    }
+    if (skill.scale !== undefined) pose.scale = skill.scale;
+    setScenePose(pose);
+
+    // Trigger gesture and/or emote from the skill
+    if (skill.gesture) setGesture(skill.gesture);
+    if (skill.emote) handleEmote(skill.emote);
+
+    // Auto-reset scene pose after hold duration
+    if (sceneResetTimer.current) clearTimeout(sceneResetTimer.current);
+    sceneResetTimer.current = setTimeout(() => {
+      setScenePose(null);
+    }, skill.holdMs);
+  }, [handleEmote]);
+
   function handleUsernameConfirm(name: string) {
     localStorage.setItem(USERNAME_KEY, name);
     setUsername(name);
@@ -138,16 +167,26 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         const data = JSON.parse(event.data);
 
         if (data.type === "ai-response") {
-          // Broadcast AI response: speech bubble, audio, gesture, emote, chat message
+          // Broadcast AI response: speech bubble, audio, gesture, emote, skill, chat message
           if (data.response) handleSpeechBubble(data.response);
           if (data.audioData) handleAudioData(data.audioData);
-          if (data.gesture) setGesture(data.gesture as GestureReaction);
-          if (data.emote) handleEmote(data.emote as EmoteCommand);
+          if (data.skillId) {
+            activateSkill(data.skillId);
+          } else {
+            if (data.gesture) setGesture(data.gesture as GestureReaction);
+            if (data.emote) handleEmote(data.emote as EmoteCommand);
+          }
           setLatestAiMessage({
             id: data.id,
             content: data.response,
             timestamp: Date.now(),
           });
+          return;
+        }
+
+        if (data.type === "skill") {
+          const skillId = data.id;
+          activateSkill(skillId);
           return;
         }
 
@@ -163,7 +202,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
 
     return () => es.close();
-  }, [handleEmote, handleSpeechBubble, handleAudioData]);
+  }, [handleEmote, handleSpeechBubble, handleAudioData, activateSkill]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -180,6 +219,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             emote={emote}
             onEmoteComplete={handleEmoteComplete}
             isSpeaking={isSpeaking}
+            scenePose={scenePose}
           />
 
           {/* Speech bubble — hidden on mobile to avoid covering Bob's face */}

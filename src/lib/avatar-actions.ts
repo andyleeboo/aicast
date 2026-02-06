@@ -270,6 +270,9 @@ export function buildActionSystemPrompt(): string {
   const emoteLines = aiEmotes
     .map((a) => `[${a.tag}] — ${a.name}: ${a.description}`)
     .join("\n");
+  const skillLines = PERFORMANCE_SKILLS.filter((s) => s.aiVisible)
+    .map((s) => `[${s.tag}] — ${s.name}: ${s.description}`)
+    .join("\n");
 
   return `
 
@@ -281,13 +284,18 @@ ${gestureLines}
 EMOTES (facial expressions using kaomoji characters, use when dramatically appropriate):
 ${emoteLines}
 
+PERFORMANCE SKILLS (dramatic full-body movements — use these for big moments! They combine movement, zoom, and expression):
+${skillLines}
+
 Rules:
-- Always include exactly ONE gesture tag at the very start
+- Always include exactly ONE gesture tag at the very start (unless using a PERFORMANCE SKILL instead)
 - You may ALSO include ONE emote tag after the gesture tag (optional)
-- Format: [GESTURE] [EMOTE] Your response text...
+- OR use ONE performance skill tag INSTEAD of gesture+emote (skills include their own movement and expression)
+- Format: [GESTURE] [EMOTE] Your response text... OR [SKILL] Your response text...
 - Do NOT include tags in your spoken text
 - [SLEEP] prevents further actions until [WAKE] — use sparingly
-- Use varied expressions! Don't just stick to HAPPY/SAD — you have a huge palette`;
+- Use varied expressions! Don't just stick to HAPPY/SAD — you have a huge palette
+- Use performance skills for dramatic moments — they make the stream entertaining!`;
 }
 
 export function buildBatchSystemPrompt(): string {
@@ -304,6 +312,191 @@ Rules for handling batched chat:
 - If multiple people are saying the same thing, acknowledge the trend (e.g. "chat is going crazy about X").
 - Keep your response to a single cohesive reply per batch — do not split into multiple separate answers.
 - If there's only one message, just reply to it naturally.`;
+}
+
+// ── Performance Skills (combined scene pose + expression) ────────────
+
+export interface PerformanceSkill {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  position?: [number, number, number]; // [x, y, z] offset
+  scale?: number;
+  gesture?: GestureReaction;
+  emote?: EmoteCommand;
+  holdMs: number; // ms before returning to default
+  aiVisible?: boolean;
+}
+
+export const PERFORMANCE_SKILLS: PerformanceSkill[] = [
+  {
+    id: "skill:dramatic-zoom",
+    name: "Dramatic Zoom",
+    tag: "DRAMATIC_ZOOM",
+    description: "Zoom in close to camera — for emphasis, shock reveals",
+    position: [0, 0, 1.8],
+    emote: "excited",
+    holdMs: 3000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:lean-in",
+    name: "Lean In",
+    tag: "LEAN_IN",
+    description: "Lean forward curiously — interested, sharing a secret",
+    position: [0, -0.15, 0.8],
+    emote: "curious",
+    gesture: "uncertain",
+    holdMs: 3500,
+    aiVisible: true,
+  },
+  {
+    id: "skill:pull-back",
+    name: "Pull Back",
+    tag: "PULL_BACK",
+    description: "Pull away from camera — surprised, recoiling, dramatic reveal",
+    position: [0, 0, -1.2],
+    emote: "surprised",
+    holdMs: 2500,
+    aiVisible: true,
+  },
+  {
+    id: "skill:power-up",
+    name: "Power Up",
+    tag: "POWER_UP",
+    description: "Grow larger and nod — feeling powerful, hype, agreeing strongly",
+    scale: 1.35,
+    emote: "hyper",
+    gesture: "yes",
+    holdMs: 3000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:smol-shy",
+    name: "Smol & Shy",
+    tag: "SMOL_SHY",
+    description: "Shrink down and look shy — embarrassed, overwhelmed, uwu",
+    position: [0, -0.3, 0],
+    scale: 0.6,
+    emote: "shy",
+    holdMs: 3500,
+    aiVisible: true,
+  },
+  {
+    id: "skill:float-up",
+    name: "Float Up",
+    tag: "FLOAT_UP",
+    description: "Float upward with sparkles — ascending, blessed, enlightened",
+    position: [0, 0.6, 0],
+    emote: "sparkles",
+    holdMs: 3000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:sink-down",
+    name: "Sink Down",
+    tag: "SINK_DOWN",
+    description: "Sink downward — defeated, sad, deflated",
+    position: [0, -0.5, 0],
+    scale: 0.85,
+    emote: "sad",
+    holdMs: 3000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:chill-lean",
+    name: "Chill Lean",
+    tag: "CHILL_LEAN",
+    description: "Lean back casually — relaxed, unbothered, cool",
+    position: [0, 0.15, -0.6],
+    emote: "cool",
+    holdMs: 4000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:rage-zoom",
+    name: "Rage Zoom",
+    tag: "RAGE_ZOOM",
+    description: "Zoom in tight with anger — furious, confrontational",
+    position: [0, 0, 2.0],
+    scale: 1.15,
+    emote: "angry",
+    gesture: "no",
+    holdMs: 2500,
+    aiVisible: true,
+  },
+  {
+    id: "skill:mind-blown",
+    name: "Mind Blown",
+    tag: "MIND_BLOWN",
+    description: "Pull back and grow — mind exploding, can't believe it",
+    position: [0, 0.2, -0.8],
+    scale: 1.25,
+    emote: "mindblown",
+    holdMs: 3000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:spotlight",
+    name: "Spotlight",
+    tag: "SPOTLIGHT",
+    description: "Zoom in with a wink — charismatic, flirty, main character energy",
+    position: [0, 0, 1.5],
+    emote: "flirty",
+    holdMs: 3000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:thinking-corner",
+    name: "Thinking Corner",
+    tag: "THINKING_CORNER",
+    description: "Drift to the side and think — contemplating, considering options",
+    position: [-0.6, 0.1, 0],
+    emote: "thinking",
+    gesture: "uncertain",
+    holdMs: 4000,
+    aiVisible: true,
+  },
+  {
+    id: "skill:dramatic-entrance",
+    name: "Dramatic Entrance",
+    tag: "DRAMATIC_ENTRANCE",
+    description: "Zoom in from far away — grand entrance, announcement, here I am",
+    position: [0, 0, -2.5],
+    scale: 0.5,
+    emote: "excited",
+    holdMs: 3500,
+    aiVisible: true,
+  },
+  {
+    id: "skill:uwu-tiny",
+    name: "UwU Tiny",
+    tag: "UWU_TINY",
+    description: "Become tiny and cute — wholesome, adorable, smol bean",
+    position: [0, -0.4, 0.3],
+    scale: 0.45,
+    emote: "uwu",
+    holdMs: 3500,
+    aiVisible: true,
+  },
+  {
+    id: "skill:gigachad",
+    name: "Gigachad",
+    tag: "GIGACHAD",
+    description: "Grow big, zoom in, look smug — absolute unit, chad energy, dominance",
+    position: [0, 0.1, 1.0],
+    scale: 1.4,
+    emote: "smug",
+    gesture: "yes",
+    holdMs: 3500,
+    aiVisible: true,
+  },
+];
+
+const skillMap = new Map(PERFORMANCE_SKILLS.map((s) => [s.id, s]));
+export function getSkill(id: string): PerformanceSkill | undefined {
+  return skillMap.get(id);
 }
 
 /** Map an action ID like "gesture:yes" to the runtime value */

@@ -2,6 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { HeadScene } from "./head-scene";
+import type { ScenePose } from "./face-controller";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface AvatarCanvasProps {
@@ -10,6 +11,7 @@ interface AvatarCanvasProps {
   emote: { command: EmoteCommand; key: number } | null;
   onEmoteComplete: () => void;
   isSpeaking: boolean;
+  scenePose?: Partial<ScenePose> | null;
 }
 
 export function AvatarCanvas({
@@ -18,6 +20,7 @@ export function AvatarCanvas({
   emote,
   onEmoteComplete,
   isSpeaking,
+  scenePose,
 }: AvatarCanvasProps) {
   return (
     <div className="relative h-full w-full">
@@ -38,6 +41,7 @@ export function AvatarCanvas({
           emote={emote}
           onEmoteComplete={onEmoteComplete}
           isSpeaking={isSpeaking}
+          scenePose={scenePose}
         />
       </Canvas>
     </div>

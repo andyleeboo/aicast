@@ -1,7 +1,7 @@
 import { useRef, useMemo, useCallback, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { FaceController, type FaceRig } from "./face-controller";
+import { FaceController, type FaceRig, type ScenePose } from "./face-controller";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface UseFaceAnimationOptions {
@@ -66,5 +66,16 @@ export function useFaceAnimation({
     [controller],
   );
 
-  return { playGesture, triggerEmote, isSleeping };
+  const setScenePose = useCallback(
+    (pose: Partial<ScenePose>) => {
+      controller.setScenePose(pose);
+    },
+    [controller],
+  );
+
+  const resetScenePose = useCallback(() => {
+    controller.resetScenePose();
+  }, [controller]);
+
+  return { playGesture, triggerEmote, isSleeping, setScenePose, resetScenePose };
 }

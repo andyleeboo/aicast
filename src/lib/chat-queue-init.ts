@@ -12,12 +12,14 @@ import type {
 } from "@/lib/types";
 import {
   AVATAR_ACTIONS,
+  PERFORMANCE_SKILLS,
   buildActionSystemPrompt,
   buildBatchSystemPrompt,
 } from "@/lib/avatar-actions";
 import { emitAction } from "@/lib/action-bus";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { setFlushHandler, getHistory, pushHistory } from "@/lib/chat-queue";
+import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 
 // ── Tag parsing (extracted from route.ts) ────────────────────────────
 
@@ -36,15 +38,26 @@ for (const action of AVATAR_ACTIONS) {
   }
 }
 
+const tagToSkill: Record<string, string> = {};
+for (const skill of PERFORMANCE_SKILLS) {
+  tagToSkill[skill.tag] = skill.id;
+}
+
 export function parseTags(raw: string) {
   let remaining = raw;
   let gesture: GestureReaction = "uncertain";
   let emote: EmoteCommand | null = null;
+  let skillId: string | null = null;
 
   const firstMatch = remaining.match(TAG_REGEX);
   if (firstMatch) {
     const tag = firstMatch[1];
-    if (tag in tagToGesture) {
+    if (tag in tagToSkill) {
+      // Performance skill overrides gesture+emote
+      skillId = tagToSkill[tag];
+      remaining = remaining.replace(TAG_REGEX, "");
+      return { response: remaining.trim(), gesture, emote, skillId };
+    } else if (tag in tagToGesture) {
       gesture = tagToGesture[tag];
       remaining = remaining.replace(TAG_REGEX, "");
     } else if (tag in tagToEmote) {
@@ -65,7 +78,7 @@ export function parseTags(raw: string) {
     }
   }
 
-  return { response: remaining.trim(), gesture, emote };
+  return { response: remaining.trim(), gesture, emote, skillId };
 }
 
 // ── Batch formatting (extracted from route.ts) ───────────────────────
@@ -100,9 +113,12 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
 const STREAMER_ID = "late-night-ai";
 
 setFlushHandler(async (batch: BatchedChatMessage[]) => {
+  pauseIdle();
+
   const channel = await getChannelFromDB(STREAMER_ID);
   if (!channel) {
     console.error("[chat-queue-init] Channel not found:", STREAMER_ID);
+    resumeIdle();
     return;
   }
 
@@ -129,10 +145,11 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     raw = await chat(messages, systemPrompt);
   } catch (err) {
     console.error("[chat-queue-init] Gemini API error:", err);
+    resumeIdle();
     return;
   }
 
-  const { response, gesture, emote } = parseTags(raw);
+  const { response, gesture, emote, skillId } = parseTags(raw);
 
   // Generate speech audio (graceful degradation)
   const audioData = await textToSpeech(response);
@@ -169,5 +186,8 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     audioData,
     gesture,
     emote,
+    skillId,
   });
+
+  resumeIdle();
 });
