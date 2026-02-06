@@ -24,12 +24,16 @@ export function ChatPanel({
   onAIResponse,
   onEmote,
   onSpeechBubble,
+  onAudioData,
+  isSpeaking,
 }: {
   streamerId: string;
   streamerName: string;
   onAIResponse?: (gesture: GestureReaction) => void;
   onEmote?: (emote: EmoteCommand) => void;
   onSpeechBubble?: (text: string | null) => void;
+  onAudioData?: (data: string) => void;
+  isSpeaking?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -98,6 +102,11 @@ export function ChatPanel({
         }),
       });
 
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `API error ${res.status}`);
+      }
+
       const data = (await res.json()) as ChatResponse;
 
       // Update conversation history with this batch turn
@@ -127,6 +136,9 @@ export function ChatPanel({
       setMessages((prev) => [...prev, aiMsg]);
       onAIResponse?.(data.gesture);
       onSpeechBubble?.(data.response);
+      if (data.audioData) {
+        onAudioData?.(data.audioData);
+      }
       if (data.emote) {
         onEmote?.(data.emote);
       }
@@ -145,7 +157,7 @@ export function ChatPanel({
         batchTimer.current = setTimeout(flushBatch, BATCH_WINDOW_MS);
       }
     }
-  }, [streamerId, onAIResponse, onEmote, onSpeechBubble]);
+  }, [streamerId, onAIResponse, onEmote, onSpeechBubble, onAudioData]);
 
   function send() {
     const text = input.trim();
@@ -244,10 +256,10 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {loading && (
+          {(loading || isSpeaking) && (
             <div className="text-sm">
               <span className="font-semibold text-accent">{streamerName}</span>
-              <span className="text-muted"> is typing</span>
+              <span className="text-muted"> {isSpeaking ? "is speaking" : "is typing"}</span>
               <span className="inline-flex ml-0.5">
                 <span className="animate-bounce text-muted [animation-delay:0ms]">.</span>
                 <span className="animate-bounce text-muted [animation-delay:150ms]">.</span>

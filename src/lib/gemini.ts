@@ -10,6 +10,42 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
+export async function textToSpeech(
+  text: string,
+  voiceName = "Enceladus",
+): Promise<string | null> {
+  try {
+    const response = await getClient().models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Say in a confident, energetic talk show host voice: ${text}`,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName },
+          },
+        },
+      },
+    });
+
+    const data =
+      response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    return data ?? null;
+  } catch (err) {
+    console.error("[tts] Gemini TTS error:", err);
+    return null;
+  }
+}
+
 export async function chat(
   messages: ChatMessage[],
   systemPrompt: string,
@@ -29,5 +65,10 @@ export async function chat(
     },
   });
 
-  return response.text ?? "...";
+  const text = response.text;
+  console.log("[chat] Gemini raw response:", JSON.stringify({ text, candidates: response.candidates }));
+  if (!text) {
+    throw new Error(`Empty response from Gemini (text=${JSON.stringify(text)})`);
+  }
+  return text;
 }
