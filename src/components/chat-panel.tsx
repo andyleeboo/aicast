@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { validateMessage } from "@/lib/moderation";
 import { dbRowToChatMessage } from "@/lib/types";
 import type {
@@ -69,6 +69,7 @@ export function ChatPanel({
   // Load initial messages + subscribe to Realtime
   useEffect(() => {
     let mounted = true;
+    const supabase = getSupabase();
 
     // Load last 50 messages
     async function loadMessages() {
@@ -223,7 +224,7 @@ export function ChatPanel({
     setInput("");
 
     // INSERT user message into Supabase — it appears via Realtime for all viewers
-    await supabase.from("messages").insert({
+    await getSupabase().from("messages").insert({
       channel_id: channelId,
       role: "user",
       content: text,

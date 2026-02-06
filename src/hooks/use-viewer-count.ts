@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export function useViewerCount(channelId: string, username?: string): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
+    const supabase = getSupabase();
     const channel = supabase.channel(`presence:${channelId}`, {
       config: { presence: { key: username || "anon" } },
     });
