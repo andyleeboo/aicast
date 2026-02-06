@@ -51,4 +51,5 @@ export interface ChatResponse {
   response: string;
   gesture: GestureReaction;
   emote: EmoteCommand | null;
+  audioData?: string; // base64 PCM, 24kHz mono 16-bit
 }
