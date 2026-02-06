@@ -1,25 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import type { ChatMessage, GestureReaction, EmoteCommand } from "@/lib/types";
+import { useState, useRef, useEffect, useCallback } from "react";
+import type {
+  ChatMessage,
+  GestureReaction,
+  EmoteCommand,
+  BatchedChatMessage,
+  ChatResponse,
+} from "@/lib/types";
 
-const RANDOM_FACTS: { text: string; gesture: GestureReaction }[] = [
-  { text: "A group of flamingos is called a 'flamboyance.' Honestly, that's the best collective noun ever.", gesture: "yes" },
-  { text: "Honey never spoils. Archaeologists have found 3,000-year-old honey in Egyptian tombs that was still perfectly edible.", gesture: "yes" },
-  { text: "Octopuses have three hearts and blue blood. Two pump blood to the gills, one pumps it to the rest of the body.", gesture: "yes" },
-  { text: "Bananas are berries, but strawberries are not. Botany is basically gaslighting us at this point.", gesture: "uncertain" },
-  { text: "There are more possible iterations of a game of chess than there are atoms in the known universe. Let that sink in.", gesture: "yes" },
-  { text: "Wombat poop is cube-shaped. They use it to mark territory, and the cubes don't roll away. Nature is efficient.", gesture: "uncertain" },
-  { text: "The inventor of the Pringles can is buried in one. His name was Fredric Baur. Respect.", gesture: "yes" },
-  { text: "Venus is the only planet that spins clockwise. It's basically the contrarian of the solar system.", gesture: "no" },
-  { text: "A jiffy is an actual unit of time — it's 1/100th of a second. So 'I'll be there in a jiffy' is a lie.", gesture: "no" },
-  { text: "Cows have best friends and get stressed when separated. Even cows need their ride-or-die.", gesture: "yes" },
-  { text: "The shortest war in history lasted 38 minutes — between Britain and Zanzibar in 1896.", gesture: "uncertain" },
-  { text: "Sea otters hold hands when they sleep so they don't drift apart. That's peak wholesome.", gesture: "yes" },
-  { text: "The total weight of all ants on Earth is roughly equal to the total weight of all humans. Ants are low-key winning.", gesture: "uncertain" },
-  { text: "Scotland's national animal is the unicorn. Not making that up. It's been their thing since the 12th century.", gesture: "yes" },
-  { text: "You can hear a blue whale's heartbeat from over 2 miles away. That's a serious sound system.", gesture: "yes" },
-];
+const BATCH_WINDOW_MS = 3000;
 
 const SLASH_COMMANDS: Record<string, { emote: EmoteCommand; msg: string }> = {
   "/wink":  { emote: "wink",  msg: "{name} winks at chat" },
@@ -51,8 +41,22 @@ export function ChatPanel({
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [username, setUsername] = useState("");
+  const [usernameConfirmed, setUsernameConfirmed] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const batchQueue = useRef<BatchedChatMessage[]>([]);
+  const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationHistory = useRef<ChatMessage[]>([]);
+  const messagesRef = useRef(messages);
+
+  // Keep messagesRef in sync with messages state
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
@@ -60,11 +64,94 @@ export function ChatPanel({
     });
   }, [messages]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || loading) return;
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (batchTimer.current) clearTimeout(batchTimer.current);
+    };
+  }, []);
 
-    // Check for slash commands
+  const flushBatch = useCallback(async () => {
+    const batch = batchQueue.current;
+    batchQueue.current = [];
+    batchTimer.current = null;
+
+    if (batch.length === 0) return;
+
+    // Wake the avatar when real messages come in
+    onEmote?.("wake");
+
+    // Build the batch text for conversation history
+    const batchLines = batch.map((m) => `${m.username}: ${m.content}`);
+    const batchText = `[CHAT BATCH - ${batch.length} message(s)]\n${batchLines.join("\n")}`;
+
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          batch,
+          streamerId,
+          history: conversationHistory.current,
+        }),
+      });
+
+      const data = (await res.json()) as ChatResponse;
+
+      // Update conversation history with this batch turn
+      conversationHistory.current = [
+        ...conversationHistory.current,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: batchText,
+          timestamp: Date.now(),
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.response,
+          timestamp: Date.now(),
+        },
+      ];
+
+      const aiMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.response,
+        timestamp: Date.now(),
+      };
+
+      setMessages((prev) => [...prev, aiMsg]);
+      onAIResponse?.(data.gesture);
+      onSpeechBubble?.(data.response);
+      if (data.emote) {
+        onEmote?.(data.emote);
+      }
+    } catch {
+      const errMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: "Failed to reach the AI — try again in a sec.",
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, errMsg]);
+    } finally {
+      setLoading(false);
+      // If new messages queued during the API call, start a new timer
+      if (batchQueue.current.length > 0) {
+        batchTimer.current = setTimeout(flushBatch, BATCH_WINDOW_MS);
+      }
+    }
+  }, [streamerId, onAIResponse, onEmote, onSpeechBubble]);
+
+  function send() {
+    const text = input.trim();
+    if (!text) return;
+
+    // Check for slash commands — bypass queue entirely
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
     if (slashCmd) {
       const systemMsg: ChatMessage = {
@@ -79,41 +166,38 @@ export function ChatPanel({
       return;
     }
 
-    // Regular message — wake if sleeping
-    onEmote?.("wake");
-
+    // Regular message — add to display immediately
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content: text,
       timestamp: Date.now(),
+      username,
     };
-
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
-    setLoading(true);
 
-    // Simulate a short delay then pick a random hardcoded fact
-    await new Promise((r) => setTimeout(r, 600 + Math.random() * 800));
-
-    const fact = RANDOM_FACTS[Math.floor(Math.random() * RANDOM_FACTS.length)];
-    const emotes: (EmoteCommand | null)[] = ["wink", "blink", null, null];
-    const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
-
-    const aiMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: fact.text,
+    // Enqueue for batch
+    const batchMsg: BatchedChatMessage = {
+      id: userMsg.id,
+      username,
+      content: text,
       timestamp: Date.now(),
+      priority: "normal",
     };
+    batchQueue.current.push(batchMsg);
 
-    setMessages((prev) => [...prev, aiMsg]);
-    onAIResponse?.(fact.gesture);
-    onSpeechBubble?.(fact.text);
-    if (randomEmote) {
-      onEmote?.(randomEmote);
+    // Start timer on first message in queue
+    if (!batchTimer.current) {
+      batchTimer.current = setTimeout(flushBatch, BATCH_WINDOW_MS);
     }
-    setLoading(false);
+  }
+
+  function confirmUsername() {
+    const name = nameInput.trim();
+    if (!name) return;
+    setUsername(name);
+    setUsernameConfirmed(true);
   }
 
   function formatTime(ts: number) {
@@ -150,7 +234,9 @@ export function ChatPanel({
                       msg.role === "user" ? "text-green-400" : "text-accent"
                     }`}
                   >
-                    {msg.role === "user" ? "You" : streamerName}
+                    {msg.role === "user"
+                      ? msg.username || "You"
+                      : streamerName}
                   </span>
                   <span className="text-muted">: </span>
                   <span className="text-foreground/90">{msg.content}</span>
@@ -174,29 +260,54 @@ export function ChatPanel({
 
       {/* Input */}
       <div className="border-t border-border p-3">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send();
-          }}
-          className="flex gap-2"
-        >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Send a message..."
-            className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+        {!usernameConfirmed ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              confirmUsername();
+            }}
+            className="flex gap-2"
           >
-            Chat
-          </button>
-        </form>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="Enter your name to chat..."
+              maxLength={20}
+              className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
+            />
+            <button
+              type="submit"
+              disabled={!nameInput.trim()}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Join
+            </button>
+          </form>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send();
+            }}
+            className="flex gap-2"
+          >
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Send a message..."
+              className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Chat
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

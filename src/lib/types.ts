@@ -22,8 +22,33 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
+  username?: string;
 }
 
 export type GestureReaction = "yes" | "no" | "uncertain";
 
 export type EmoteCommand = "wink" | "blink" | "sleep" | "wake";
+
+export type MessagePriority = "normal" | "highlight" | "donation";
+
+export interface BatchedChatMessage {
+  id: string;
+  username: string;
+  content: string;
+  timestamp: number;
+  priority: MessagePriority;
+  donationAmount?: number;
+  donationCurrency?: string;
+}
+
+export interface ChatBatchRequest {
+  batch: BatchedChatMessage[];
+  streamerId: string;
+  history: ChatMessage[];
+}
+
+export interface ChatResponse {
+  response: string;
+  gesture: GestureReaction;
+  emote: EmoteCommand | null;
+}
