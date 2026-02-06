@@ -25,7 +25,7 @@ export function ChatPanel({
   onEmote,
   onSpeechBubble,
   onAudioData,
-  isSpeaking,
+  onUserInteraction,
 }: {
   streamerId: string;
   streamerName: string;
@@ -33,16 +33,9 @@ export function ChatPanel({
   onEmote?: (emote: EmoteCommand) => void;
   onSpeechBubble?: (text: string | null) => void;
   onAudioData?: (data: string) => void;
-  isSpeaking?: boolean;
+  onUserInteraction?: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: `Welcome to the stream, chat! I'm ${streamerName}. Ask me anything, roast me, or just hang out. Let's go.`,
-      timestamp: Date.now(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [username, setUsername] = useState("");
@@ -126,14 +119,7 @@ export function ChatPanel({
         },
       ];
 
-      const aiMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.response,
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, aiMsg]);
+      // Bob speaks on stream (speech bubble + TTS), not in chat
       onAIResponse?.(data.gesture);
       onSpeechBubble?.(data.response);
       if (data.audioData) {
@@ -162,6 +148,7 @@ export function ChatPanel({
   function send() {
     const text = input.trim();
     if (!text) return;
+    onUserInteraction?.();
 
     // Check for slash commands — bypass queue entirely
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
@@ -208,6 +195,7 @@ export function ChatPanel({
   function confirmUsername() {
     const name = nameInput.trim();
     if (!name) return;
+    onUserInteraction?.();
     setUsername(name);
     setUsernameConfirmed(true);
   }
@@ -241,14 +229,8 @@ export function ChatPanel({
                 <span className="italic text-yellow-400">{msg.content}</span>
               ) : (
                 <>
-                  <span
-                    className={`font-semibold ${
-                      msg.role === "user" ? "text-green-400" : "text-accent"
-                    }`}
-                  >
-                    {msg.role === "user"
-                      ? msg.username || "You"
-                      : streamerName}
+                  <span className="font-semibold text-green-400">
+                    {msg.username || "You"}
                   </span>
                   <span className="text-muted">: </span>
                   <span className="text-foreground/90">{msg.content}</span>
@@ -256,15 +238,14 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {(loading || isSpeaking) && (
-            <div className="text-sm">
-              <span className="font-semibold text-accent">{streamerName}</span>
-              <span className="text-muted"> {isSpeaking ? "is speaking" : "is typing"}</span>
-              <span className="inline-flex ml-0.5">
-                <span className="animate-bounce text-muted [animation-delay:0ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:150ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:300ms]">.</span>
-              </span>
+          {messages.length === 0 && !loading && (
+            <div className="text-center text-xs text-muted/60 py-8">
+              No messages yet — say something!
+            </div>
+          )}
+          {loading && (
+            <div className="text-xs text-muted/60 italic">
+              {streamerName} is reading chat...
             </div>
           )}
         </div>

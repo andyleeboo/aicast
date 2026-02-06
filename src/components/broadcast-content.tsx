@@ -33,6 +33,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       setIsSpeaking(false);
       setSpeechBubble(null);
     },
+    onError: () => {
+      setIsSpeaking(false);
+    },
   });
 
   const handleSpeechBubble = useCallback((text: string | null) => {
@@ -43,6 +46,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
     }
   }, []);
+
+  // Pre-warm AudioContext when user interacts with the page (unlocks autoplay)
+  const handleUserInteraction = useCallback(() => {
+    player.warmup();
+  }, [player]);
 
   const handleAudioData = useCallback(
     (data: string) => {
@@ -206,7 +214,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           onEmote={handleEmote}
           onSpeechBubble={handleSpeechBubble}
           onAudioData={handleAudioData}
-          isSpeaking={isSpeaking}
+          onUserInteraction={handleUserInteraction}
         />
       </div>
     </div>

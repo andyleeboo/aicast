@@ -48,3 +48,6 @@ firebase-debug.log
 
 # sentry
 .sentryclirc
+
+# git worktrees
+.worktrees/

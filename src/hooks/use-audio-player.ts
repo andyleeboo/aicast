@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 
 interface UseAudioPlayerOptions {
   onEnd?: () => void;
+  onError?: (err: unknown) => void;
 }
 
 export function useAudioPlayer(options?: UseAudioPlayerOptions) {
@@ -12,18 +13,28 @@ export function useAudioPlayer(options?: UseAudioPlayerOptions) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const onEndRef = useRef(options?.onEnd);
+  const onErrorRef = useRef(options?.onError);
 
-  // Keep callback ref in sync
+  // Keep callback refs in sync
   useEffect(() => {
     onEndRef.current = options?.onEnd;
-  }, [options?.onEnd]);
+    onErrorRef.current = options?.onError;
+  }, [options?.onEnd, options?.onError]);
 
   const getContext = useCallback(() => {
-    if (!ctxRef.current) {
+    if (!ctxRef.current || ctxRef.current.state === "closed") {
       ctxRef.current = new AudioContext({ sampleRate: 24000 });
     }
     return ctxRef.current;
   }, []);
+
+  /** Call during a user gesture (click/keypress) to unlock the AudioContext early. */
+  const warmup = useCallback(() => {
+    const ctx = getContext();
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+  }, [getContext]);
 
   const stop = useCallback(() => {
     if (sourceRef.current) {
@@ -39,41 +50,51 @@ export function useAudioPlayer(options?: UseAudioPlayerOptions) {
 
   const play = useCallback(
     async (base64: string) => {
-      // Stop any current playback
-      stop();
+      try {
+        // Stop any current playback
+        stop();
 
-      const ctx = getContext();
+        const ctx = getContext();
 
-      // Resume context if suspended (browser autoplay policy)
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
+        // Resume context if suspended (browser autoplay policy)
+        if (ctx.state === "suspended") {
+          await ctx.resume();
+        }
 
-      // Decode base64 PCM to Float32Array (24kHz, mono, 16-bit signed LE)
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      const samples = new Float32Array(bytes.length / 2);
-      const view = new DataView(bytes.buffer);
-      for (let i = 0; i < samples.length; i++) {
-        samples[i] = view.getInt16(i * 2, true) / 32768;
-      }
+        if (ctx.state !== "running") {
+          console.warn("[audio] AudioContext state after resume:", ctx.state);
+        }
 
-      const buffer = ctx.createBuffer(1, samples.length, 24000);
-      buffer.getChannelData(0).set(samples);
+        // Decode base64 PCM to Float32Array (24kHz, mono, 16-bit signed LE)
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        const samples = new Float32Array(bytes.length / 2);
+        const view = new DataView(bytes.buffer);
+        for (let i = 0; i < samples.length; i++) {
+          samples[i] = view.getInt16(i * 2, true) / 32768;
+        }
 
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
+        const buffer = ctx.createBuffer(1, samples.length, 24000);
+        buffer.getChannelData(0).set(samples);
 
-      source.onended = () => {
-        sourceRef.current = null;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+
+        source.onended = () => {
+          sourceRef.current = null;
+          setIsPlaying(false);
+          onEndRef.current?.();
+        };
+
+        sourceRef.current = source;
+        setIsPlaying(true);
+        setDuration(buffer.duration);
+        source.start();
+      } catch (err) {
+        console.error("[audio] Playback failed:", err);
         setIsPlaying(false);
-        onEndRef.current?.();
-      };
-
-      sourceRef.current = source;
-      setIsPlaying(true);
-      setDuration(buffer.duration);
-      source.start();
+        onErrorRef.current?.(err);
+      }
     },
     [stop, getContext],
   );
@@ -94,5 +115,5 @@ export function useAudioPlayer(options?: UseAudioPlayerOptions) {
     };
   }, []);
 
-  return { play, stop, isPlaying, duration };
+  return { play, stop, warmup, isPlaying, duration };
 }
