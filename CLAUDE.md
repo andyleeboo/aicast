@@ -9,16 +9,19 @@ AI live streaming platform (Twitch for AI). Viewers watch AI-generated broadcast
 ## Commands
 
 ```bash
-yarn dev          # Start dev server at localhost:3000
-yarn build        # Production build
-yarn lint         # ESLint (flat config, eslint.config.mjs)
+bun dev           # Start dev server at localhost:3000
+bun run build     # Production build
+bun lint          # ESLint (flat config, eslint.config.mjs)
 ```
 
-Both `yarn.lock` and `bun.lock` exist; use yarn as the primary package manager.
+Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 
 ## Environment Variables
 
 - `GEMINI_API_KEY` — Google AI Studio API key (required for AI chat; without it, the Gemini client lazy-inits with an empty key)
+- `SENTRY_DSN` — Sentry Data Source Name for server/edge error tracking
+- `NEXT_PUBLIC_SENTRY_DSN` — Sentry DSN for browser error tracking (same value as `SENTRY_DSN`)
+- `SENTRY_AUTH_TOKEN` — Sentry auth token for source map uploads (only needed in CI/production builds)
 
 ## Tech Stack
 
@@ -78,7 +81,7 @@ git worktree add .worktrees/<name> -b <branch-name>
 git worktree add .worktrees/chat-streaming -b feature/chat-streaming
 ```
 
-Then work inside `.worktrees/<name>/` — it's a full checkout with its own `node_modules` (run `yarn install` after creating).
+Then work inside `.worktrees/<name>/` — it's a full checkout with its own `node_modules` (run `bun install` after creating).
 
 ### Opening a PR from a worktree
 
@@ -100,7 +103,7 @@ git branch -d <branch-name>
 - **Never commit from the main checkout** for feature work — always use a worktree
 - Each worktree = one branch = one PR
 - The main checkout stays on `main` and is used for reviews, rebases, and running the app
-- Run `yarn install` inside each new worktree (they don't share `node_modules`)
+- Run `bun install` inside each new worktree (they don't share `node_modules`)
 
 ## Conventions
 
