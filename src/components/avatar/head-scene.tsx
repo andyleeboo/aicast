@@ -20,11 +20,13 @@ export function HeadScene({
   const headRef = useRef<THREE.Group>(null);
   const leftEyeRef = useRef<THREE.Mesh>(null);
   const rightEyeRef = useRef<THREE.Mesh>(null);
+  const leftLidRef = useRef<THREE.Group>(null);
+  const rightLidRef = useRef<THREE.Group>(null);
 
   const { playGesture, triggerEmote, isSleeping } = useFaceAnimation({
     headRef,
-    leftEyeRef,
-    rightEyeRef,
+    leftLidRef,
+    rightLidRef,
     onGestureComplete,
     onEmoteComplete,
   });
@@ -57,6 +59,8 @@ export function HeadScene({
         ref={headRef}
         leftEyeRef={leftEyeRef}
         rightEyeRef={rightEyeRef}
+        leftLidRef={leftLidRef}
+        rightLidRef={rightLidRef}
       />
     </>
   );

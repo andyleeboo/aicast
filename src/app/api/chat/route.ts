@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chat, textToSpeech } from "@/lib/gemini";
-import { getChannel } from "@/lib/mock-data";
+import { getChannelFromDB } from "@/lib/mock-data";
 import {
   ChatMessage,
   GestureReaction,
@@ -12,6 +12,8 @@ import {
   buildBatchSystemPrompt,
 } from "@/lib/avatar-actions";
 import { emitAction } from "@/lib/action-bus";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { validateMessage } from "@/lib/moderation";
 
 const GESTURE_TAGS = ["NOD", "SHAKE", "TILT"] as const;
 const EMOTE_TAGS = ["WINK", "BLINK", "SLEEP"] as const;
@@ -99,9 +101,23 @@ export async function POST(req: NextRequest) {
   const streamerId: string = body.streamerId;
   const history: ChatMessage[] = body.history ?? [];
 
-  const channel = getChannel(streamerId);
+  const channel = await getChannelFromDB(streamerId);
   if (!channel) {
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+  }
+
+  // Server-side moderation for batch messages
+  if (isBatch) {
+    const batch: BatchedChatMessage[] = body.batch;
+    for (const msg of batch) {
+      const check = validateMessage(msg.content);
+      if (!check.valid) {
+        return NextResponse.json(
+          { error: check.error ?? "Message rejected" },
+          { status: 400 },
+        );
+      }
+    }
   }
 
   let messages: ChatMessage[];
@@ -157,6 +173,14 @@ export async function POST(req: NextRequest) {
 
   // Generate speech audio (graceful degradation — null on failure)
   const audioData = await textToSpeech(response);
+
+  // Insert AI response into messages table
+  const supabase = createServerSupabaseClient();
+  await supabase.from("messages").insert({
+    channel_id: streamerId,
+    role: "assistant",
+    content: response,
+  });
 
   // Emit to action bus for SSE sync
   emitAction({ type: "gesture", id: `gesture:${gesture}` });

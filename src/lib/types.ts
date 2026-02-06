@@ -1,3 +1,5 @@
+import type { Tables } from "./database.types";
+
 export interface Streamer {
   id: string;
   name: string;
@@ -11,7 +13,6 @@ export interface Channel {
   name: string;
   description: string;
   category: string;
-  viewerCount: number;
   isLive: boolean;
   thumbnailUrl: string;
   streamer: Streamer;
@@ -23,6 +24,18 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   username?: string;
+}
+
+export type MessageRow = Tables<"messages">;
+
+export function dbRowToChatMessage(row: MessageRow): ChatMessage {
+  return {
+    id: row.id,
+    role: row.role as ChatMessage["role"],
+    content: row.content,
+    timestamp: new Date(row.created_at).getTime(),
+    username: row.username ?? undefined,
+  };
 }
 
 export type GestureReaction = "yes" | "no" | "uncertain";
