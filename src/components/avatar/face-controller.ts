@@ -7,15 +7,48 @@ import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 export interface FacePose {
   headQuat: THREE.Quaternion;
-  leftLidOpen: number;
+  leftLidOpen: number; // 0 = fully closed, 1 = fully open
   rightLidOpen: number;
+  // Text face characters
+  leftEyeText: string;
+  rightEyeText: string;
+  mouthText: string;
+  // Legacy numeric fields (kept for gesture/state compatibility)
+  mouthOpen: number; // 0 closed → 1 fully open
+  mouthWidth: number; // 0.8 narrow → 1.3 wide
+  // Unused but kept for state code compatibility
+  leftBrowAngle: number;
+  rightBrowAngle: number;
+  leftBrowY: number;
+  rightBrowY: number;
+  mouthCurve: number;
+  leftPupilOffset: THREE.Vector2;
+  rightPupilOffset: THREE.Vector2;
+  leftPupilScale: number;
+  rightPupilScale: number;
 }
+
+// Default face characters
+const DEFAULT_EYE_OPEN = "*";
+const DEFAULT_EYE_CLOSED = "-";
+const DEFAULT_MOUTH = "_";
 
 export function createPose(): FacePose {
   return {
     headQuat: new THREE.Quaternion(),
-    leftLidOpen: 1.0,
-    rightLidOpen: 1.0,
+    leftLidOpen: 1,
+    rightLidOpen: 1,
+    leftEyeText: DEFAULT_EYE_OPEN,
+    rightEyeText: DEFAULT_EYE_OPEN,
+    mouthText: DEFAULT_MOUTH,
+    mouthOpen: 0,
+    mouthWidth: 1,
+    leftBrowAngle: 0, rightBrowAngle: 0,
+    leftBrowY: 0, rightBrowY: 0,
+    mouthCurve: 0,
+    leftPupilOffset: new THREE.Vector2(),
+    rightPupilOffset: new THREE.Vector2(),
+    leftPupilScale: 1, rightPupilScale: 1,
   };
 }
 
@@ -23,6 +56,24 @@ export function copyPose(dst: FacePose, src: FacePose): void {
   dst.headQuat.copy(src.headQuat);
   dst.leftLidOpen = src.leftLidOpen;
   dst.rightLidOpen = src.rightLidOpen;
+  dst.leftEyeText = src.leftEyeText;
+  dst.rightEyeText = src.rightEyeText;
+  dst.mouthText = src.mouthText;
+  dst.leftBrowAngle = src.leftBrowAngle;
+  dst.rightBrowAngle = src.rightBrowAngle;
+  dst.leftBrowY = src.leftBrowY;
+  dst.rightBrowY = src.rightBrowY;
+  dst.mouthCurve = src.mouthCurve;
+  dst.mouthOpen = src.mouthOpen;
+  dst.mouthWidth = src.mouthWidth;
+  dst.leftPupilOffset.copy(src.leftPupilOffset);
+  dst.rightPupilOffset.copy(src.rightPupilOffset);
+  dst.leftPupilScale = src.leftPupilScale;
+  dst.rightPupilScale = src.rightPupilScale;
+}
+
+function lerpScalar(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
 }
 
 export function lerpPose(
@@ -32,8 +83,52 @@ export function lerpPose(
   t: number,
 ): void {
   dst.headQuat.copy(a.headQuat).slerp(b.headQuat, t);
-  dst.leftLidOpen = a.leftLidOpen + (b.leftLidOpen - a.leftLidOpen) * t;
-  dst.rightLidOpen = a.rightLidOpen + (b.rightLidOpen - a.rightLidOpen) * t;
+  dst.leftLidOpen = lerpScalar(a.leftLidOpen, b.leftLidOpen, t);
+  dst.rightLidOpen = lerpScalar(a.rightLidOpen, b.rightLidOpen, t);
+  // Text fields snap at midpoint (can't interpolate characters)
+  dst.leftEyeText = t > 0.5 ? b.leftEyeText : a.leftEyeText;
+  dst.rightEyeText = t > 0.5 ? b.rightEyeText : a.rightEyeText;
+  dst.mouthText = t > 0.5 ? b.mouthText : a.mouthText;
+  dst.leftBrowAngle = lerpScalar(a.leftBrowAngle, b.leftBrowAngle, t);
+  dst.rightBrowAngle = lerpScalar(a.rightBrowAngle, b.rightBrowAngle, t);
+  dst.leftBrowY = lerpScalar(a.leftBrowY, b.leftBrowY, t);
+  dst.rightBrowY = lerpScalar(a.rightBrowY, b.rightBrowY, t);
+  dst.mouthCurve = lerpScalar(a.mouthCurve, b.mouthCurve, t);
+  dst.mouthOpen = lerpScalar(a.mouthOpen, b.mouthOpen, t);
+  dst.mouthWidth = lerpScalar(a.mouthWidth, b.mouthWidth, t);
+  dst.leftPupilOffset.lerpVectors(a.leftPupilOffset, b.leftPupilOffset, t);
+  dst.rightPupilOffset.lerpVectors(a.rightPupilOffset, b.rightPupilOffset, t);
+  dst.leftPupilScale = lerpScalar(a.leftPupilScale, b.leftPupilScale, t);
+  dst.rightPupilScale = lerpScalar(a.rightPupilScale, b.rightPupilScale, t);
+}
+
+// ─── FaceRig (ref bundle for Three.js objects) ──────────────────────
+
+export interface FaceRig {
+  head: THREE.Group;
+  leftEye: THREE.Mesh;
+  rightEye: THREE.Mesh;
+  mouth: THREE.Mesh;
+}
+
+/** Reset expression fields to neutral defaults */
+function resetExpression(pose: FacePose): void {
+  pose.leftLidOpen = 1;
+  pose.rightLidOpen = 1;
+  pose.leftEyeText = DEFAULT_EYE_OPEN;
+  pose.rightEyeText = DEFAULT_EYE_OPEN;
+  pose.mouthText = DEFAULT_MOUTH;
+  pose.leftBrowAngle = 0;
+  pose.rightBrowAngle = 0;
+  pose.leftBrowY = 0;
+  pose.rightBrowY = 0;
+  pose.mouthCurve = 0;
+  pose.mouthOpen = 0;
+  pose.mouthWidth = 1;
+  pose.leftPupilOffset.set(0, 0);
+  pose.rightPupilOffset.set(0, 0);
+  pose.leftPupilScale = 1;
+  pose.rightPupilScale = 1;
 }
 
 // ─── Easing helpers ──────────────────────────────────────────────────
@@ -58,17 +153,6 @@ const _qSleepTarget = new THREE.Quaternion().setFromAxisAngle(_axisX, -0.44);
 // Lid constants: 1.0 = open, 0.0 = closed
 const LID_OPEN = 1.0;
 const LID_CLOSED = 0.0;
-
-// Eyelid rotation mapping: lidOpen [0..1] -> rotation around X-axis (radians)
-// lidOpen=1 -> lid tipped back behind eye top (hidden)
-// lidOpen=0 -> lid swung down over the eye (covering it)
-export const LID_OPEN_ANGLE = -1.2; // radians — lid tipped back behind eye top
-export const LID_CLOSED_ANGLE = 0.15; // radians — lid just past vertical covering eye
-
-/** Convert a lidOpen value [0..1] to an X-axis rotation angle for the eyelid mesh. */
-export function lidOpenToAngle(lidOpen: number): number {
-  return LID_CLOSED_ANGLE + (LID_OPEN_ANGLE - LID_CLOSED_ANGLE) * lidOpen;
-}
 
 // ─── AnimationState interface ────────────────────────────────────────
 
@@ -125,8 +209,28 @@ class IdleState implements AnimationState {
     _qA.multiply(_qB);
 
     outPose.headQuat.copy(_qA);
-    outPose.leftLidOpen = LID_OPEN;
-    outPose.rightLidOpen = LID_OPEN;
+    outPose.leftLidOpen = 1;
+    outPose.rightLidOpen = 1;
+    outPose.leftEyeText = DEFAULT_EYE_OPEN;
+    outPose.rightEyeText = DEFAULT_EYE_OPEN;
+    outPose.mouthText = DEFAULT_MOUTH;
+
+    // Idle expressions: slight smile, gently raised brows
+    outPose.leftBrowAngle = 0.05;
+    outPose.rightBrowAngle = 0.05;
+    outPose.leftBrowY = 0.01;
+    outPose.rightBrowY = 0.01;
+    outPose.mouthCurve = 0.2;
+    outPose.mouthOpen = 0;
+    outPose.mouthWidth = 1;
+
+    // Pupil micro-saccades: slow procedural drift
+    const saccadeX = 0.005 * Math.sin(1.7 * t + 3.1) + 0.003 * Math.sin(2.9 * t);
+    const saccadeY = 0.004 * Math.sin(1.3 * t + 1.7) + 0.003 * Math.sin(2.3 * t + 0.5);
+    outPose.leftPupilOffset.set(saccadeX, saccadeY);
+    outPose.rightPupilOffset.set(saccadeX, saccadeY);
+    outPose.leftPupilScale = 1;
+    outPose.rightPupilScale = 1;
 
     return null;
   }
@@ -164,15 +268,68 @@ class GestureState implements AnimationState {
 
   private samples: QuaternionSample[] = [];
   private duration = 0;
+  gestureType: GestureReaction = "uncertain";
 
-  loadSamples(samples: QuaternionSample[]): void {
+  loadSamples(samples: QuaternionSample[], gestureType: GestureReaction): void {
     this.samples = samples;
     this.duration = samples.length > 0 ? samples[samples.length - 1].t : 0;
+    this.gestureType = gestureType;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   enter(currentPose: FacePose): void {
     // controller's crossfade handles blend-in
+  }
+
+  private applyGestureExpression(outPose: FacePose): void {
+    // Gestures keep default text face
+    outPose.leftEyeText = DEFAULT_EYE_OPEN;
+    outPose.rightEyeText = DEFAULT_EYE_OPEN;
+    outPose.mouthText = DEFAULT_MOUTH;
+
+    switch (this.gestureType) {
+      case "yes":
+        outPose.leftBrowAngle = 0.15;
+        outPose.rightBrowAngle = 0.15;
+        outPose.leftBrowY = 0.03;
+        outPose.rightBrowY = 0.03;
+        outPose.mouthCurve = 0.4;
+        outPose.mouthOpen = 0;
+        outPose.mouthWidth = 1.1;
+        outPose.leftPupilOffset.set(0, 0);
+        outPose.rightPupilOffset.set(0, 0);
+        outPose.leftPupilScale = 1;
+        outPose.rightPupilScale = 1;
+        break;
+      case "no":
+        outPose.leftBrowAngle = -0.1;
+        outPose.rightBrowAngle = -0.1;
+        outPose.leftBrowY = -0.01;
+        outPose.rightBrowY = -0.01;
+        outPose.mouthCurve = -0.2;
+        outPose.mouthOpen = 0;
+        outPose.mouthWidth = 0.9;
+        // pupils follow head direction
+        outPose.leftPupilOffset.set(0, 0);
+        outPose.rightPupilOffset.set(0, 0);
+        outPose.leftPupilScale = 1;
+        outPose.rightPupilScale = 1;
+        break;
+      case "uncertain":
+        outPose.leftBrowAngle = 0.2;
+        outPose.rightBrowAngle = -0.1;
+        outPose.leftBrowY = 0.04;
+        outPose.rightBrowY = -0.01;
+        outPose.mouthCurve = 0;
+        outPose.mouthOpen = 0;
+        outPose.mouthWidth = 1;
+        // look up-left
+        outPose.leftPupilOffset.set(-0.01, 0.01);
+        outPose.rightPupilOffset.set(-0.01, 0.01);
+        outPose.leftPupilScale = 1;
+        outPose.rightPupilScale = 1;
+        break;
+    }
   }
 
   update(
@@ -184,10 +341,10 @@ class GestureState implements AnimationState {
     if (s.length === 0) return { nextState: "idle", blendOut: 0 };
 
     if (elapsed >= this.duration) {
-      // hold last sample pose for crossfade to pick up
       sampleToQuat(s[s.length - 1], outPose.headQuat);
       outPose.leftLidOpen = LID_OPEN;
       outPose.rightLidOpen = LID_OPEN;
+      this.applyGestureExpression(outPose);
       return { nextState: "idle", blendOut: 0.25 };
     }
 
@@ -197,6 +354,7 @@ class GestureState implements AnimationState {
     outPose.headQuat.copy(_qA).slerp(_qB, frac);
     outPose.leftLidOpen = LID_OPEN;
     outPose.rightLidOpen = LID_OPEN;
+    this.applyGestureExpression(outPose);
 
     return null;
   }
@@ -238,14 +396,15 @@ class WinkState implements AnimationState {
     outPose: FacePose,
   ): TransitionRequest | null {
     if (elapsed >= WINK_TOTAL) {
-      // hold entry pose for crossfade
       outPose.headQuat.copy(this.entryQuat);
+      resetExpression(outPose);
       outPose.leftLidOpen = LID_OPEN;
       outPose.rightLidOpen = LID_OPEN;
       return { nextState: "idle", blendOut: 0.2 };
     }
 
-    // Left eye stays open
+    // right eye closed entire time, left eye open
+    outPose.rightLidOpen = LID_CLOSED;
     outPose.leftLidOpen = LID_OPEN;
 
     // Right eye: smooth close at start, smooth open at end, closed during hold
@@ -275,6 +434,22 @@ class WinkState implements AnimationState {
       );
       outPose.headQuat.copy(this.tiltTarget).slerp(this.entryQuat, t);
     }
+
+    // Wink: left eye open, right eye closed, cheeky mouth
+    outPose.leftEyeText = DEFAULT_EYE_OPEN;
+    outPose.rightEyeText = DEFAULT_EYE_CLOSED;
+    outPose.mouthText = "ε";
+    outPose.leftBrowAngle = 0.2;
+    outPose.rightBrowAngle = -0.05;
+    outPose.leftBrowY = 0.04;
+    outPose.rightBrowY = 0;
+    outPose.mouthCurve = 0.5;
+    outPose.mouthOpen = 0;
+    outPose.mouthWidth = 1.15;
+    outPose.leftPupilOffset.set(0, 0);
+    outPose.rightPupilOffset.set(0, 0);
+    outPose.leftPupilScale = 1;
+    outPose.rightPupilScale = 1;
 
     return null;
   }
@@ -306,6 +481,7 @@ class BlinkEmoteState implements AnimationState {
     outPose: FacePose,
   ): TransitionRequest | null {
     outPose.headQuat.copy(this.frozenQuat);
+    resetExpression(outPose);
 
     let lidOpen: number;
     if (elapsed < BLINK_EMOTE_CLOSE) {
@@ -369,6 +545,23 @@ class SleepState implements AnimationState {
     // exitStartQuat is set in update when phase changes
   }
 
+  private applySleepExpression(outPose: FacePose): void {
+    outPose.leftEyeText = DEFAULT_EYE_CLOSED;
+    outPose.rightEyeText = DEFAULT_EYE_CLOSED;
+    outPose.mouthText = "﹏";
+    outPose.leftBrowAngle = -0.15;
+    outPose.rightBrowAngle = -0.15;
+    outPose.leftBrowY = -0.03;
+    outPose.rightBrowY = -0.03;
+    outPose.mouthCurve = 0;
+    outPose.mouthOpen = 0.05;
+    outPose.mouthWidth = 0.9;
+    outPose.leftPupilOffset.set(0, 0);
+    outPose.rightPupilOffset.set(0, 0);
+    outPose.leftPupilScale = 1;
+    outPose.rightPupilScale = 1;
+  }
+
   update(
     _dt: number,
     elapsed: number,
@@ -392,6 +585,8 @@ class SleepState implements AnimationState {
       outPose.leftLidOpen = lidVal;
       outPose.rightLidOpen = lidVal;
 
+      this.applySleepExpression(outPose);
+
       if (t >= 1) {
         this.phase = "sleeping";
         this.phaseStart = elapsed;
@@ -401,19 +596,18 @@ class SleepState implements AnimationState {
 
     if (this.phase === "sleeping") {
       const sleepElapsed = elapsed - this.phaseStart;
-      // breathing: multiply small pitch offset onto sleep target
       const breathOffset = 0.03 * Math.sin(2 * Math.PI * 0.4 * sleepElapsed);
       _qA.setFromAxisAngle(_axisX, breathOffset);
       outPose.headQuat.copy(_qSleepTarget).multiply(_qA);
 
       outPose.leftLidOpen = LID_CLOSED;
       outPose.rightLidOpen = LID_CLOSED;
+      this.applySleepExpression(outPose);
       return null;
     }
 
     // exiting
     if (this.phaseElapsed === 0) {
-      // first frame of exit — capture current head pose
       this.exitStartQuat.copy(outPose.headQuat);
     }
     this.phaseElapsed += _dt;
@@ -421,7 +615,6 @@ class SleepState implements AnimationState {
     const t = Math.min(this.phaseElapsed / SLEEP_EXIT_DURATION, 1);
     const eased = easeOutQuad(t);
 
-    // SLERP toward identity (so crossfade to idle wander handles the rest)
     outPose.headQuat.copy(this.exitStartQuat).slerp(_qA.identity(), eased);
 
     // Smoothly open eyes starting at 30% of exit duration
@@ -430,6 +623,16 @@ class SleepState implements AnimationState {
     const lidVal = LID_CLOSED + (LID_OPEN - LID_CLOSED) * lidEased;
     outPose.leftLidOpen = lidVal;
     outPose.rightLidOpen = lidVal;
+
+    // Blend expression from sleep to neutral during exit
+    if (t < 0.5) {
+      this.applySleepExpression(outPose);
+    } else {
+      resetExpression(outPose);
+      // Override lid values since resetExpression sets them to 1
+      outPose.leftLidOpen = lidVal;
+      outPose.rightLidOpen = lidVal;
+    }
 
     if (t >= 1) {
       this.sleeping = false;
@@ -441,6 +644,291 @@ class SleepState implements AnimationState {
   exit(): void {
     this.sleeping = false;
   }
+}
+
+// ─── Text Expression System ─────────────────────────────────────────
+
+interface TextExpression {
+  leftEye: string;
+  rightEye: string;
+  mouth: string;
+}
+
+/**
+ * Comprehensive kaomoji expression table.
+ * Each key is an EmoteCommand; the value defines the text characters
+ * for leftEye, rightEye, and mouth on the avatar face.
+ */
+export const TEXT_EXPRESSIONS: Record<string, TextExpression> = {
+  // ── Core emotions ─────────────────────────────────────────────
+  happy:       { leftEye: "^", rightEye: "^", mouth: "ω" },
+  sad:         { leftEye: "T", rightEye: "T", mouth: "_" },
+  surprised:   { leftEye: "◎", rightEye: "◎", mouth: "○" },
+  thinking:    { leftEye: "¬", rightEye: "¬", mouth: "." },
+  angry:       { leftEye: "╬", rightEye: "╬", mouth: "益" },
+  confused:    { leftEye: "◑", rightEye: "◐", mouth: "?" },
+  excited:     { leftEye: "★", rightEye: "★", mouth: "∀" },
+  love:        { leftEye: "♥", rightEye: "♥", mouth: "ω" },
+  smug:        { leftEye: "￣", rightEye: "￣", mouth: "ε" },
+  crying:      { leftEye: "Ṫ", rightEye: "Ṫ", mouth: "Д" },
+  laughing:    { leftEye: "≧", rightEye: "≦", mouth: "▽" },
+  worried:     { leftEye: "；", rightEye: "；", mouth: "∧" },
+  nervous:     { leftEye: "'", rightEye: "'", mouth: "∀" },
+  proud:       { leftEye: "⌐", rightEye: "⌐", mouth: "▽" },
+  shy:         { leftEye: "╯", rightEye: "╰", mouth: "∧" },
+  bored:       { leftEye: "￣", rightEye: "￣", mouth: "ε" },
+  tired:       { leftEye: "=", rightEye: "=", mouth: "ω" },
+  disgusted:   { leftEye: "ಠ", rightEye: "ಠ", mouth: "_" },
+  scared:      { leftEye: "゜", rightEye: "゜", mouth: "Д" },
+  determined:  { leftEye: "•̀", rightEye: "•́", mouth: "﹃" },
+
+  // ── Happy variants ────────────────────────────────────────────
+  joy:         { leftEye: "◕", rightEye: "◕", mouth: "ᴗ" },
+  bliss:       { leftEye: "˘", rightEye: "˘", mouth: "ω" },
+  grinning:    { leftEye: "＾", rightEye: "＾", mouth: "▽" },
+  cheerful:    { leftEye: "◠", rightEye: "◠", mouth: "◡" },
+  gleeful:     { leftEye: "✧", rightEye: "✧", mouth: "▽" },
+  delighted:   { leftEye: "ˊ", rightEye: "ˋ", mouth: "ᗜ" },
+  euphoric:    { leftEye: "≧", rightEye: "≦", mouth: "◡" },
+  content:     { leftEye: "ᵕ", rightEye: "ᵕ", mouth: "ᴗ" },
+  radiant:     { leftEye: "☆", rightEye: "☆", mouth: "∀" },
+  playful:     { leftEye: "◕", rightEye: "◕", mouth: "ε" },
+
+  // ── Sad variants ──────────────────────────────────────────────
+  heartbroken: { leftEye: "╥", rightEye: "╥", mouth: "∩" },
+  melancholy:  { leftEye: "ᵕ̣̣", rightEye: "ᵕ̣̣", mouth: "。" },
+  sobbing:     { leftEye: "இ", rightEye: "இ", mouth: "Д" },
+  gloomy:      { leftEye: "ˊ", rightEye: "ˋ", mouth: "ω" },
+  depressed:   { leftEye: "⌒", rightEye: "⌒", mouth: "_" },
+  lonely:      { leftEye: "；", rightEye: "；", mouth: "ω" },
+  disappointed:{ leftEye: "ˋ", rightEye: "ˊ", mouth: "ε" },
+  weeping:     { leftEye: "╯", rightEye: "╰", mouth: "Д" },
+  moping:      { leftEye: "−", rightEye: "−", mouth: "ε" },
+  miserable:   { leftEye: "Ⱥ", rightEye: "Ⱥ", mouth: "﹏" },
+
+  // ── Angry variants ────────────────────────────────────────────
+  furious:     { leftEye: "╬", rightEye: "╬", mouth: "Д" },
+  irritated:   { leftEye: "¬", rightEye: "¬", mouth: "益" },
+  annoyed:     { leftEye: "¬", rightEye: "¬", mouth: "ε" },
+  raging:      { leftEye: "╬", rightEye: "╬", mouth: "皿" },
+  grumpy:      { leftEye: "ˋ", rightEye: "ˊ", mouth: "益" },
+  hostile:     { leftEye: "▼", rightEye: "▼", mouth: "益" },
+  seething:    { leftEye: "╬", rightEye: "╬", mouth: "∀" },
+  frustrated:  { leftEye: "≧", rightEye: "≦", mouth: "﹏" },
+  indignant:   { leftEye: "ˋ", rightEye: "ˊ", mouth: "_" },
+  cranky:      { leftEye: "−", rightEye: "−", mouth: "﹏" },
+
+  // ── Surprise variants ─────────────────────────────────────────
+  shocked:     { leftEye: "⊙", rightEye: "⊙", mouth: "Д" },
+  amazed:      { leftEye: "✧", rightEye: "✧", mouth: "○" },
+  astonished:  { leftEye: "◉", rightEye: "◉", mouth: "□" },
+  startled:    { leftEye: "゜", rightEye: "゜", mouth: "ロ" },
+  speechless:  { leftEye: "◎", rightEye: "◎", mouth: " " },
+  stunned:     { leftEye: "⊙", rightEye: "⊙", mouth: "ロ" },
+  flabbergasted:{ leftEye: "Ꙫ", rightEye: "Ꙫ", mouth: "□" },
+  awed:        { leftEye: "☆", rightEye: "☆", mouth: "○" },
+  dumbfounded: { leftEye: "⊙", rightEye: "⊙", mouth: "_" },
+  bewildered:  { leftEye: "◑", rightEye: "◐", mouth: "□" },
+
+  // ── Love/affection ────────────────────────────────────────────
+  adoring:     { leftEye: "♡", rightEye: "♡", mouth: "ᴗ" },
+  crushing:    { leftEye: "♥", rightEye: "♥", mouth: "ᴗ" },
+  smitten:     { leftEye: "♡", rightEye: "♡", mouth: "ω" },
+  lovestruck:  { leftEye: "❤", rightEye: "❤", mouth: "∀" },
+  infatuated:  { leftEye: "♥", rightEye: "♥", mouth: "ε" },
+  yearning:    { leftEye: "♡", rightEye: "♡", mouth: "ε" },
+  charmed:     { leftEye: "˘", rightEye: "˘", mouth: "ε" },
+  devoted:     { leftEye: "♥", rightEye: "♥", mouth: "◡" },
+  tender:      { leftEye: "ᵕ", rightEye: "ᵕ", mouth: "ω" },
+  warm:        { leftEye: "◠", rightEye: "◠", mouth: "ω" },
+
+  // ── Smug/confident ────────────────────────────────────────────
+  sassy:       { leftEye: "￣", rightEye: "￣", mouth: "∀" },
+  cocky:       { leftEye: "⌐", rightEye: "⌐", mouth: "ε" },
+  superior:    { leftEye: "⌐", rightEye: "⌐", mouth: "ω" },
+  victorious:  { leftEye: "≧", rightEye: "≦", mouth: "∀" },
+  triumphant:  { leftEye: "★", rightEye: "★", mouth: "▽" },
+  cheeky:      { leftEye: "◕", rightEye: "◕", mouth: "ε" },
+  mischievous: { leftEye: "¬", rightEye: "¬", mouth: "ω" },
+  devious:     { leftEye: "¬", rightEye: "¬", mouth: "▽" },
+  brazen:      { leftEye: "⌐", rightEye: "⌐", mouth: "▽" },
+  sly:         { leftEye: "−", rightEye: "−", mouth: "ε" },
+
+  // ── Confused/thinking ─────────────────────────────────────────
+  puzzled:     { leftEye: "◑", rightEye: "◐", mouth: "ε" },
+  pondering:   { leftEye: "ˋ", rightEye: "ˊ", mouth: "ω" },
+  curious:     { leftEye: "◕", rightEye: "◕", mouth: "?" },
+  skeptical:   { leftEye: "ˋ", rightEye: "ˊ", mouth: "_" },
+  questioning: { leftEye: "?", rightEye: "?", mouth: "ω" },
+  perplexed:   { leftEye: "◎", rightEye: "◎", mouth: "?" },
+  dubious:     { leftEye: "ˋ", rightEye: "ˊ", mouth: "﹏" },
+  uncertain:   { leftEye: "；", rightEye: "；", mouth: "ε" },
+  clueless:    { leftEye: "？", rightEye: "？", mouth: "ω" },
+  contemplating:{ leftEye: "ˋ", rightEye: "ˊ", mouth: "。" },
+
+  // ── Scared/nervous ────────────────────────────────────────────
+  terrified:   { leftEye: "⊙", rightEye: "⊙", mouth: "Д" },
+  anxious:     { leftEye: "；", rightEye: "；", mouth: "﹏" },
+  panicked:    { leftEye: "゜", rightEye: "゜", mouth: "□" },
+  spooked:     { leftEye: "⊙", rightEye: "⊙", mouth: "∧" },
+  uneasy:      { leftEye: "'", rightEye: "'", mouth: "﹏" },
+  dread:       { leftEye: "⊙", rightEye: "⊙", mouth: "﹏" },
+  timid:       { leftEye: "；", rightEye: "；", mouth: "∧" },
+  petrified:   { leftEye: "Ꙫ", rightEye: "Ꙫ", mouth: "Д" },
+  jumpy:       { leftEye: "゜", rightEye: "゜", mouth: "∀" },
+  creepedout:  { leftEye: "⊙", rightEye: "⊙", mouth: "ε" },
+
+  // ── Cute/kawaii ────────────────────────────────────────────────
+  uwu:         { leftEye: "◕", rightEye: "◕", mouth: "ᴗ" },
+  sparkles:    { leftEye: "✧", rightEye: "✧", mouth: "ω" },
+  kawaii:      { leftEye: "◕", rightEye: "◕", mouth: "ω" },
+  innocent:    { leftEye: "◕", rightEye: "◕", mouth: "。" },
+  bubbly:      { leftEye: "◠", rightEye: "◠", mouth: "▽" },
+  adorable:    { leftEye: "˘", rightEye: "˘", mouth: "ᴗ" },
+  puppy:       { leftEye: "◕", rightEye: "◕", mouth: "∧" },
+  cutesy:      { leftEye: "✿", rightEye: "✿", mouth: "ω" },
+  dainty:      { leftEye: "˘", rightEye: "˘", mouth: "◡" },
+  sweet:       { leftEye: "◠", rightEye: "◠", mouth: "ᴗ" },
+
+  // ── Silly/goofy ───────────────────────────────────────────────
+  derp:        { leftEye: "◑", rightEye: "◐", mouth: "ω" },
+  goofy:       { leftEye: "◑", rightEye: "◐", mouth: "▽" },
+  zany:        { leftEye: "✧", rightEye: "◑", mouth: "▽" },
+  wacky:       { leftEye: "≧", rightEye: "◑", mouth: "∀" },
+  silly:       { leftEye: "◕", rightEye: "◑", mouth: "ε" },
+  bonkers:     { leftEye: "★", rightEye: "◑", mouth: "Д" },
+  nutty:       { leftEye: "◎", rightEye: "◑", mouth: "ω" },
+  dorky:       { leftEye: "◕", rightEye: "◕", mouth: "ε" },
+  loopy:       { leftEye: "◑", rightEye: "◐", mouth: "∀" },
+  clowning:    { leftEye: "★", rightEye: "☆", mouth: "▽" },
+
+  // ── Cool/confident ────────────────────────────────────────────
+  cool:        { leftEye: "■", rightEye: "■", mouth: "ε" },
+  chill:       { leftEye: "−", rightEye: "−", mouth: "ω" },
+  suave:       { leftEye: "￣", rightEye: "￣", mouth: "ω" },
+  aloof:       { leftEye: "−", rightEye: "−", mouth: "_" },
+  nonchalant:  { leftEye: "￣", rightEye: "￣", mouth: "_" },
+  confident:   { leftEye: "⌐", rightEye: "⌐", mouth: "∀" },
+  smooth:      { leftEye: "−", rightEye: "−", mouth: "∀" },
+  composed:    { leftEye: "−", rightEye: "−", mouth: "◡" },
+  unfazed:     { leftEye: "￣", rightEye: "￣", mouth: "◡" },
+  stoic:       { leftEye: "−", rightEye: "−", mouth: "。" },
+
+  // ── Tired/sleepy ──────────────────────────────────────────────
+  drowsy:      { leftEye: "=", rightEye: "=", mouth: "﹏" },
+  exhausted:   { leftEye: "×", rightEye: "×", mouth: "﹏" },
+  sleepy:      { leftEye: "˘", rightEye: "˘", mouth: "﹏" },
+  yawning:     { leftEye: "=", rightEye: "=", mouth: "○" },
+  fatigued:    { leftEye: "=", rightEye: "=", mouth: "_" },
+  zonked:      { leftEye: "×", rightEye: "×", mouth: "_" },
+  drained:     { leftEye: "−", rightEye: "−", mouth: "﹏" },
+  lethargic:   { leftEye: "=", rightEye: "=", mouth: "ε" },
+  weary:       { leftEye: "−", rightEye: "=", mouth: "﹏" },
+  dazed:       { leftEye: "◎", rightEye: "◎", mouth: "。" },
+
+  // ── Disgust/discomfort ────────────────────────────────────────
+  grossed:     { leftEye: "ಠ", rightEye: "ಠ", mouth: "益" },
+  repulsed:    { leftEye: "ಠ", rightEye: "ಠ", mouth: "Д" },
+  nauseated:   { leftEye: "×", rightEye: "×", mouth: "﹏" },
+  cringing:    { leftEye: "⌒", rightEye: "⌒", mouth: "∧" },
+  uncomfortable:{ leftEye: "；", rightEye: "；", mouth: "_" },
+  appalled:    { leftEye: "ಠ", rightEye: "ಠ", mouth: "□" },
+  yikes:       { leftEye: "⊙", rightEye: "⊙", mouth: "﹏" },
+  eww:         { leftEye: "ಠ", rightEye: "ಠ", mouth: "﹏" },
+  ick:         { leftEye: "×", rightEye: "×", mouth: "益" },
+  queasy:      { leftEye: "；", rightEye: "；", mouth: "﹏" },
+
+  // ── Special/dramatic ──────────────────────────────────────────
+  dead:        { leftEye: "×", rightEye: "×", mouth: "_" },
+  mindblown:   { leftEye: "⊙", rightEye: "⊙", mouth: "○" },
+  facepalm:    { leftEye: "−", rightEye: "−", mouth: "﹏" },
+  shrug:       { leftEye: "￣", rightEye: "￣", mouth: "∀" },
+  judging:     { leftEye: "ಠ", rightEye: "ಠ", mouth: "_" },
+  plotting:    { leftEye: "¬", rightEye: "¬", mouth: "ε" },
+  suspicious:  { leftEye: "¬", rightEye: "¬", mouth: "_" },
+  pouting:     { leftEye: "◕", rightEye: "◕", mouth: "3" },
+  flirty:      { leftEye: "◕", rightEye: "-", mouth: "ε" },
+  daydreaming: { leftEye: "˘", rightEye: "˘", mouth: "。" },
+  zen:         { leftEye: "￣", rightEye: "￣", mouth: "。" },
+  hyper:       { leftEye: "☆", rightEye: "☆", mouth: "▽" },
+  dramatic:    { leftEye: "◉", rightEye: "◉", mouth: "Д" },
+  sarcastic:   { leftEye: "￣", rightEye: "￣", mouth: "ε" },
+  starstruck:  { leftEye: "★", rightEye: "★", mouth: "○" },
+  grateful:    { leftEye: "◕", rightEye: "◕", mouth: "◡" },
+  hopeful:     { leftEye: "◕", rightEye: "◕", mouth: "ᴗ" },
+  nostalgic:   { leftEye: "ˋ", rightEye: "ˊ", mouth: "ω" },
+  peaceful:    { leftEye: "˘", rightEye: "˘", mouth: "◡" },
+  fierce:      { leftEye: "▼", rightEye: "▼", mouth: "∀" },
+};
+
+// ─── ExpressionEmoteState ────────────────────────────────────────────
+
+const EXPRESSION_BLEND_IN = 0.2;
+const EXPRESSION_HOLD = 3.5;
+const EXPRESSION_BLEND_OUT = 0.3;
+const EXPRESSION_TOTAL = EXPRESSION_BLEND_IN + EXPRESSION_HOLD + EXPRESSION_BLEND_OUT;
+
+class ExpressionEmoteState implements AnimationState {
+  readonly name = "expression";
+  readonly controlsEyes = true; // controls eyes since we change eye text
+
+  private expressionKey = "happy";
+  private frozenQuat = new THREE.Quaternion();
+
+  setExpression(key: string): void {
+    this.expressionKey = key;
+  }
+
+  enter(currentPose: FacePose): void {
+    this.frozenQuat.copy(currentPose.headQuat);
+  }
+
+  update(
+    _dt: number,
+    elapsed: number,
+    outPose: FacePose,
+  ): TransitionRequest | null {
+    const expr = TEXT_EXPRESSIONS[this.expressionKey];
+    if (!expr) {
+      resetExpression(outPose);
+      outPose.headQuat.copy(this.frozenQuat);
+      return { nextState: "idle", blendOut: 0.2 };
+    }
+
+    if (elapsed >= EXPRESSION_TOTAL) {
+      resetExpression(outPose);
+      outPose.headQuat.copy(this.frozenQuat);
+      return { nextState: "idle", blendOut: 0.2 };
+    }
+
+    outPose.headQuat.copy(this.frozenQuat);
+
+    // Snap text at blend-in threshold
+    if (elapsed >= EXPRESSION_BLEND_IN * 0.3) {
+      outPose.leftEyeText = expr.leftEye;
+      outPose.rightEyeText = expr.rightEye;
+      outPose.mouthText = expr.mouth;
+      outPose.leftLidOpen = 1;
+      outPose.rightLidOpen = 1;
+    } else {
+      outPose.leftEyeText = DEFAULT_EYE_OPEN;
+      outPose.rightEyeText = DEFAULT_EYE_OPEN;
+      outPose.mouthText = DEFAULT_MOUTH;
+      outPose.leftLidOpen = 1;
+      outPose.rightLidOpen = 1;
+    }
+
+    // Snap back to default near end
+    if (elapsed > EXPRESSION_BLEND_IN + EXPRESSION_HOLD + EXPRESSION_BLEND_OUT * 0.7) {
+      outPose.leftEyeText = DEFAULT_EYE_OPEN;
+      outPose.rightEyeText = DEFAULT_EYE_OPEN;
+      outPose.mouthText = DEFAULT_MOUTH;
+    }
+
+    return null;
+  }
+
+  exit(): void {}
 }
 
 // ─── FaceController ──────────────────────────────────────────────────
@@ -463,6 +951,7 @@ export class FaceController {
   private winkState = new WinkState();
   private blinkEmoteState = new BlinkEmoteState();
   private sleepState = new SleepState();
+  private expressionEmoteState = new ExpressionEmoteState();
 
   // Active state
   private activeState: AnimationState = this.idleState;
@@ -484,6 +973,9 @@ export class FaceController {
   private entranceStart = -1;
   private entranceDone = false;
   private readonly ENTRANCE_DURATION = 0.6;
+
+  // Speaking state (set externally each frame)
+  isSpeakingFlag = false;
 
   constructor() {
     this.idleState.enter(this.outputPose);
@@ -522,7 +1014,7 @@ export class FaceController {
 
   async playGesture(gesture: GestureReaction): Promise<void> {
     const recording = await fetchGesture(gesture);
-    this.gestureState.loadSamples(recording.samples);
+    this.gestureState.loadSamples(recording.samples, gesture);
     this.transitionTo(this.gestureState, 0.25);
   }
 
@@ -548,20 +1040,19 @@ export class FaceController {
       this.transitionTo(this.blinkEmoteState, 0);
       return;
     }
+
+    // Text expression emotes — any key in TEXT_EXPRESSIONS
+    if (command in TEXT_EXPRESSIONS) {
+      this.expressionEmoteState.setExpression(command);
+      this.transitionTo(this.expressionEmoteState, 0.15);
+      return;
+    }
   }
 
   // ── Per-frame update ─────────────────────────────────────────
 
-  update(
-    dt: number,
-    head: THREE.Group,
-    leftLid: THREE.Group,
-    rightLid: THREE.Group,
-  ): UpdateResult {
-    const result: UpdateResult = {
-      gestureCompleted: false,
-      emoteCompleted: false,
-    };
+  update(dt: number, rig: FaceRig): UpdateResult {
+    const result: UpdateResult = { gestureCompleted: false, emoteCompleted: false };
 
     // Clamp delta to prevent jumps on tab re-focus
     const clampedDt = Math.min(dt, 0.1);
@@ -573,7 +1064,7 @@ export class FaceController {
       const elapsed = now - this.entranceStart;
       const t = Math.min(elapsed / this.ENTRANCE_DURATION, 1);
       const s = easeOutQuad(t);
-      head.scale.set(s, s, s);
+      rig.head.scale.set(s, s, s);
       if (t >= 1) this.entranceDone = true;
       return result;
     }
@@ -603,7 +1094,8 @@ export class FaceController {
       const wasEmote =
         this.activeState === this.winkState ||
         this.activeState === this.blinkEmoteState ||
-        this.activeState === this.sleepState;
+        this.activeState === this.sleepState ||
+        this.activeState === this.expressionEmoteState;
 
       this.transitionToIdle(request.blendOut);
 
@@ -651,10 +1143,26 @@ export class FaceController {
       }
     }
 
-    // Write to Three.js objects
-    head.quaternion.copy(this.outputPose.headQuat);
-    leftLid.rotation.x = lidOpenToAngle(this.outputPose.leftLidOpen);
-    rightLid.rotation.x = lidOpenToAngle(this.outputPose.rightLidOpen);
+    // Speaking overlay: alternate mouth text when speaking
+    if (this.isSpeakingFlag && this.activeState !== this.sleepState) {
+      const speakCycle = Math.sin(now * 12);
+      this.outputPose.mouthText = speakCycle > 0 ? "○" : DEFAULT_MOUTH;
+    }
+
+    // ── Write pose to Three.js objects ──────────────────────────
+    const p = this.outputPose;
+
+    rig.head.quaternion.copy(p.headQuat);
+
+    // Eyes: use text from pose, but override with closed char when lid is shut
+    const le = rig.leftEye as unknown as { text: string };
+    const re = rig.rightEye as unknown as { text: string };
+    le.text = p.leftLidOpen > 0.5 ? p.leftEyeText : DEFAULT_EYE_CLOSED;
+    re.text = p.rightLidOpen > 0.5 ? p.rightEyeText : DEFAULT_EYE_CLOSED;
+
+    // Mouth: use text from pose, override when speaking
+    const mo = rig.mouth as unknown as { text: string };
+    mo.text = p.mouthText;
 
     return result;
   }

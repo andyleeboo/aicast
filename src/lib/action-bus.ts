@@ -5,13 +5,24 @@ export interface ActionEvent {
 
 type ActionListener = (event: ActionEvent) => void;
 
-const listeners = new Set<ActionListener>();
+// Use globalThis to ensure a single shared Set across all route modules
+// (Turbopack dev can isolate module scopes per route)
+const GLOBAL_KEY = "__actionBusListeners" as const;
+
+function getListeners(): Set<ActionListener> {
+  const g = globalThis as unknown as Record<string, Set<ActionListener>>;
+  if (!g[GLOBAL_KEY]) {
+    g[GLOBAL_KEY] = new Set<ActionListener>();
+  }
+  return g[GLOBAL_KEY];
+}
 
 export function emitAction(event: ActionEvent): void {
-  listeners.forEach((fn) => fn(event));
+  getListeners().forEach((fn) => fn(event));
 }
 
 export function subscribe(fn: ActionListener): () => void {
+  const listeners = getListeners();
   listeners.add(fn);
   return () => {
     listeners.delete(fn);

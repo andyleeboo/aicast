@@ -1,23 +1,27 @@
 import { useRef, useMemo, useCallback, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { FaceController } from "./face-controller";
+import { FaceController, type FaceRig } from "./face-controller";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface UseFaceAnimationOptions {
   headRef: React.RefObject<THREE.Group | null>;
-  leftLidRef: React.RefObject<THREE.Group | null>;
-  rightLidRef: React.RefObject<THREE.Group | null>;
+  leftEyeRef: React.RefObject<THREE.Mesh | null>;
+  rightEyeRef: React.RefObject<THREE.Mesh | null>;
+  mouthRef: React.RefObject<THREE.Mesh | null>;
   onGestureComplete: () => void;
   onEmoteComplete: () => void;
+  isSpeaking: boolean;
 }
 
 export function useFaceAnimation({
   headRef,
-  leftLidRef,
-  rightLidRef,
+  leftEyeRef,
+  rightEyeRef,
+  mouthRef,
   onGestureComplete,
   onEmoteComplete,
+  isSpeaking,
 }: UseFaceAnimationOptions) {
   const controller = useMemo(() => new FaceController(), []);
   const isSleeping = useRef(false);
@@ -33,11 +37,15 @@ export function useFaceAnimation({
   // Single useFrame — the ONLY place Three.js objects are mutated
   useFrame((_, delta) => {
     const head = headRef.current;
-    const leftLid = leftLidRef.current;
-    const rightLid = rightLidRef.current;
-    if (!head || !leftLid || !rightLid) return;
+    const leftEye = leftEyeRef.current;
+    const rightEye = rightEyeRef.current;
+    const mouth = mouthRef.current;
+    if (!head || !leftEye || !rightEye || !mouth) return;
 
-    const result = controller.update(delta, head, leftLid, rightLid);
+    const rig: FaceRig = { head, leftEye, rightEye, mouth };
+
+    controller.isSpeakingFlag = isSpeaking;
+    const result = controller.update(delta, rig);
     isSleeping.current = controller.isSleeping;
 
     if (result.gestureCompleted) gestureCompleteCb.current();

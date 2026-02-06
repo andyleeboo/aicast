@@ -9,6 +9,7 @@ interface AvatarCanvasProps {
   onGestureComplete: () => void;
   emote: { command: EmoteCommand; key: number } | null;
   onEmoteComplete: () => void;
+  isSpeaking: boolean;
 }
 
 export function AvatarCanvas({
@@ -16,6 +17,7 @@ export function AvatarCanvas({
   onGestureComplete,
   emote,
   onEmoteComplete,
+  isSpeaking,
 }: AvatarCanvasProps) {
   return (
     <div className="relative h-full w-full">
@@ -35,6 +37,7 @@ export function AvatarCanvas({
           onGestureComplete={onGestureComplete}
           emote={emote}
           onEmoteComplete={onEmoteComplete}
+          isSpeaking={isSpeaking}
         />
       </Canvas>
     </div>
