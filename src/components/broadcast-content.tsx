@@ -13,9 +13,20 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [gesture, setGesture] = useState<GestureReaction | null>(null);
   const [emote, setEmote] = useState<{ command: EmoteCommand; key: number } | null>(null);
   const [sleeping, setSleeping] = useState(false);
+  const [speechBubble, setSpeechBubble] = useState<string | null>(null);
+  const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
   const pendingEmote = useRef<EmoteCommand | null>(null);
+
+  const handleSpeechBubble = useCallback((text: string | null) => {
+    if (speechTimeout.current) clearTimeout(speechTimeout.current);
+    setSpeechBubble(text);
+    if (text) {
+      // Show bubble for 5 seconds then fade out
+      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+    }
+  }, []);
 
   const fireEmote = useCallback((cmd: EmoteCommand) => {
     emoteCounter.current += 1;
@@ -99,6 +110,25 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             emote={emote}
             onEmoteComplete={handleEmoteComplete}
           />
+
+          {/* Speech bubble */}
+          <div
+            className={`pointer-events-none absolute left-1/2 top-6 z-10 max-w-md -translate-x-1/2 transition-all duration-300 ${
+              speechBubble
+                ? "translate-y-0 opacity-100"
+                : "-translate-y-4 opacity-0"
+            }`}
+          >
+            {speechBubble && (
+              <div className="relative rounded-2xl bg-white px-5 py-3 text-sm leading-relaxed text-gray-900 shadow-lg">
+                {speechBubble}
+                {/* Bubble tail / triangle */}
+                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                  <div className="h-0 w-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white" />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Stream info bar */}
@@ -123,6 +153,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           streamerName={channel.streamer.name}
           onAIResponse={handleAIResponse}
           onEmote={handleEmote}
+          onSpeechBubble={handleSpeechBubble}
         />
       </div>
     </div>
