@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChannel } from "@/lib/mock-data";
+import { getChannelFromDB } from "@/lib/mock-data";
 import { BroadcastContent } from "@/components/broadcast-content";
+import { ViewerCount } from "@/components/viewer-count";
 
 export default async function LivePage({
   params,
@@ -9,7 +10,7 @@ export default async function LivePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const channel = getChannel(id);
+  const channel = await getChannelFromDB(id);
 
   if (!channel) notFound();
 
@@ -33,7 +34,7 @@ export default async function LivePage({
             <span className="font-medium text-live">LIVE</span>
           </span>
           <span className="text-muted">
-            {channel.viewerCount.toLocaleString()} viewers
+            <ViewerCount channelId={id} />
           </span>
         </div>
       </header>

@@ -3,25 +3,26 @@ import { fetchGesture, type QuaternionSample } from "./gesture-data";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 // ─── FacePose ────────────────────────────────────────────────────────
+// leftLidOpen / rightLidOpen: 1.0 = fully open, 0.0 = fully closed
 
 export interface FacePose {
   headQuat: THREE.Quaternion;
-  leftEyeScale: THREE.Vector3;
-  rightEyeScale: THREE.Vector3;
+  leftLidOpen: number;
+  rightLidOpen: number;
 }
 
 export function createPose(): FacePose {
   return {
     headQuat: new THREE.Quaternion(),
-    leftEyeScale: new THREE.Vector3(1, 1, 1),
-    rightEyeScale: new THREE.Vector3(1, 1, 1),
+    leftLidOpen: 1.0,
+    rightLidOpen: 1.0,
   };
 }
 
 export function copyPose(dst: FacePose, src: FacePose): void {
   dst.headQuat.copy(src.headQuat);
-  dst.leftEyeScale.copy(src.leftEyeScale);
-  dst.rightEyeScale.copy(src.rightEyeScale);
+  dst.leftLidOpen = src.leftLidOpen;
+  dst.rightLidOpen = src.rightLidOpen;
 }
 
 export function lerpPose(
@@ -31,8 +32,8 @@ export function lerpPose(
   t: number,
 ): void {
   dst.headQuat.copy(a.headQuat).slerp(b.headQuat, t);
-  dst.leftEyeScale.lerpVectors(a.leftEyeScale, b.leftEyeScale, t);
-  dst.rightEyeScale.lerpVectors(a.rightEyeScale, b.rightEyeScale, t);
+  dst.leftLidOpen = a.leftLidOpen + (b.leftLidOpen - a.leftLidOpen) * t;
+  dst.rightLidOpen = a.rightLidOpen + (b.rightLidOpen - a.rightLidOpen) * t;
 }
 
 // ─── Easing helpers ──────────────────────────────────────────────────
@@ -47,14 +48,27 @@ function easeInQuad(t: number): number {
 
 // ─── Pre-allocated THREE temps (module scope, zero GC) ───────────────
 
-const _scaleOpen = new THREE.Vector3(1, 1, 1);
-const _scaleClosed = new THREE.Vector3(1.4, 0.2, 1.0);
 const _axisX = new THREE.Vector3(1, 0, 0);
 const _axisY = new THREE.Vector3(0, 1, 0);
 const _axisZ = new THREE.Vector3(0, 0, 1);
 const _qA = new THREE.Quaternion();
 const _qB = new THREE.Quaternion();
 const _qSleepTarget = new THREE.Quaternion().setFromAxisAngle(_axisX, -0.44);
+
+// Lid constants: 1.0 = open, 0.0 = closed
+const LID_OPEN = 1.0;
+const LID_CLOSED = 0.0;
+
+// Eyelid rotation mapping: lidOpen [0..1] -> rotation around X-axis (radians)
+// lidOpen=1 -> lid tipped back behind eye top (hidden)
+// lidOpen=0 -> lid swung down over the eye (covering it)
+export const LID_OPEN_ANGLE = -1.2; // radians — lid tipped back behind eye top
+export const LID_CLOSED_ANGLE = 0.15; // radians — lid just past vertical covering eye
+
+/** Convert a lidOpen value [0..1] to an X-axis rotation angle for the eyelid mesh. */
+export function lidOpenToAngle(lidOpen: number): number {
+  return LID_CLOSED_ANGLE + (LID_OPEN_ANGLE - LID_CLOSED_ANGLE) * lidOpen;
+}
 
 // ─── AnimationState interface ────────────────────────────────────────
 
@@ -111,8 +125,8 @@ class IdleState implements AnimationState {
     _qA.multiply(_qB);
 
     outPose.headQuat.copy(_qA);
-    outPose.leftEyeScale.copy(_scaleOpen);
-    outPose.rightEyeScale.copy(_scaleOpen);
+    outPose.leftLidOpen = LID_OPEN;
+    outPose.rightLidOpen = LID_OPEN;
 
     return null;
   }
@@ -172,8 +186,8 @@ class GestureState implements AnimationState {
     if (elapsed >= this.duration) {
       // hold last sample pose for crossfade to pick up
       sampleToQuat(s[s.length - 1], outPose.headQuat);
-      outPose.leftEyeScale.copy(_scaleOpen);
-      outPose.rightEyeScale.copy(_scaleOpen);
+      outPose.leftLidOpen = LID_OPEN;
+      outPose.rightLidOpen = LID_OPEN;
       return { nextState: "idle", blendOut: 0.25 };
     }
 
@@ -181,8 +195,8 @@ class GestureState implements AnimationState {
     sampleToQuat(a, _qA);
     sampleToQuat(b, _qB);
     outPose.headQuat.copy(_qA).slerp(_qB, frac);
-    outPose.leftEyeScale.copy(_scaleOpen);
-    outPose.rightEyeScale.copy(_scaleOpen);
+    outPose.leftLidOpen = LID_OPEN;
+    outPose.rightLidOpen = LID_OPEN;
 
     return null;
   }
@@ -195,9 +209,11 @@ class GestureState implements AnimationState {
 
 // ─── WinkState ───────────────────────────────────────────────────────
 
+const WINK_CLOSE_DURATION = 0.08; // smooth close for the winking eye
 const WINK_TILT_IN = 0.3;
 const WINK_HOLD = 2.0;
 const WINK_TILT_OUT = 0.3;
+const WINK_OPEN_DURATION = 0.08; // smooth open at the end
 const WINK_TILT_ANGLE = 0.18;
 const WINK_TOTAL = WINK_TILT_IN + WINK_HOLD + WINK_TILT_OUT;
 
@@ -224,15 +240,30 @@ class WinkState implements AnimationState {
     if (elapsed >= WINK_TOTAL) {
       // hold entry pose for crossfade
       outPose.headQuat.copy(this.entryQuat);
-      outPose.leftEyeScale.copy(_scaleOpen);
-      outPose.rightEyeScale.copy(_scaleOpen);
+      outPose.leftLidOpen = LID_OPEN;
+      outPose.rightLidOpen = LID_OPEN;
       return { nextState: "idle", blendOut: 0.2 };
     }
 
-    // right eye closed entire time
-    outPose.rightEyeScale.copy(_scaleClosed);
-    outPose.leftEyeScale.copy(_scaleOpen);
+    // Left eye stays open
+    outPose.leftLidOpen = LID_OPEN;
 
+    // Right eye: smooth close at start, smooth open at end, closed during hold
+    if (elapsed < WINK_CLOSE_DURATION) {
+      // Smoothly close the right eye
+      const t = easeOutQuad(elapsed / WINK_CLOSE_DURATION);
+      outPose.rightLidOpen = LID_OPEN + (LID_CLOSED - LID_OPEN) * t;
+    } else if (elapsed >= WINK_TOTAL - WINK_OPEN_DURATION) {
+      // Smoothly re-open the right eye
+      const t = easeOutQuad(
+        (elapsed - (WINK_TOTAL - WINK_OPEN_DURATION)) / WINK_OPEN_DURATION,
+      );
+      outPose.rightLidOpen = LID_CLOSED + (LID_OPEN - LID_CLOSED) * t;
+    } else {
+      outPose.rightLidOpen = LID_CLOSED;
+    }
+
+    // Head tilt animation (unchanged logic)
     if (elapsed < WINK_TILT_IN) {
       const t = easeOutQuad(elapsed / WINK_TILT_IN);
       outPose.headQuat.copy(this.entryQuat).slerp(this.tiltTarget, t);
@@ -253,7 +284,11 @@ class WinkState implements AnimationState {
 
 // ─── BlinkEmoteState ─────────────────────────────────────────────────
 
-const BLINK_EMOTE_DURATION = 0.15;
+const BLINK_EMOTE_CLOSE = 0.06; // time to close lids
+const BLINK_EMOTE_HOLD = 0.06; // hold closed
+const BLINK_EMOTE_OPEN = 0.06; // time to re-open
+const BLINK_EMOTE_TOTAL =
+  BLINK_EMOTE_CLOSE + BLINK_EMOTE_HOLD + BLINK_EMOTE_OPEN;
 
 class BlinkEmoteState implements AnimationState {
   readonly name = "blinkEmote";
@@ -272,15 +307,29 @@ class BlinkEmoteState implements AnimationState {
   ): TransitionRequest | null {
     outPose.headQuat.copy(this.frozenQuat);
 
-    if (elapsed < BLINK_EMOTE_DURATION) {
-      outPose.leftEyeScale.copy(_scaleClosed);
-      outPose.rightEyeScale.copy(_scaleClosed);
-      return null;
+    let lidOpen: number;
+    if (elapsed < BLINK_EMOTE_CLOSE) {
+      // Closing phase — ease in (accelerate shut)
+      const t = easeInQuad(elapsed / BLINK_EMOTE_CLOSE);
+      lidOpen = LID_OPEN + (LID_CLOSED - LID_OPEN) * t;
+    } else if (elapsed < BLINK_EMOTE_CLOSE + BLINK_EMOTE_HOLD) {
+      // Hold closed
+      lidOpen = LID_CLOSED;
+    } else if (elapsed < BLINK_EMOTE_TOTAL) {
+      // Opening phase — ease out (decelerate open)
+      const t = easeOutQuad(
+        (elapsed - BLINK_EMOTE_CLOSE - BLINK_EMOTE_HOLD) / BLINK_EMOTE_OPEN,
+      );
+      lidOpen = LID_CLOSED + (LID_OPEN - LID_CLOSED) * t;
+    } else {
+      outPose.leftLidOpen = LID_OPEN;
+      outPose.rightLidOpen = LID_OPEN;
+      return { nextState: "idle", blendOut: 0 };
     }
 
-    outPose.leftEyeScale.copy(_scaleOpen);
-    outPose.rightEyeScale.copy(_scaleOpen);
-    return { nextState: "idle", blendOut: 0 };
+    outPose.leftLidOpen = lidOpen;
+    outPose.rightLidOpen = lidOpen;
+    return null;
   }
 
   exit(): void {}
@@ -336,14 +385,12 @@ class SleepState implements AnimationState {
 
       outPose.headQuat.copy(this.entryQuat).slerp(_qSleepTarget, eased);
 
-      // close eyes at 30%
-      if (t > 0.3) {
-        outPose.leftEyeScale.copy(_scaleClosed);
-        outPose.rightEyeScale.copy(_scaleClosed);
-      } else {
-        outPose.leftEyeScale.copy(_scaleOpen);
-        outPose.rightEyeScale.copy(_scaleOpen);
-      }
+      // Smoothly close eyes over the first 50% of entering
+      const lidCloseT = Math.min(t / 0.5, 1.0);
+      const lidEased = easeInQuad(lidCloseT);
+      const lidVal = LID_OPEN + (LID_CLOSED - LID_OPEN) * lidEased;
+      outPose.leftLidOpen = lidVal;
+      outPose.rightLidOpen = lidVal;
 
       if (t >= 1) {
         this.phase = "sleeping";
@@ -359,8 +406,8 @@ class SleepState implements AnimationState {
       _qA.setFromAxisAngle(_axisX, breathOffset);
       outPose.headQuat.copy(_qSleepTarget).multiply(_qA);
 
-      outPose.leftEyeScale.copy(_scaleClosed);
-      outPose.rightEyeScale.copy(_scaleClosed);
+      outPose.leftLidOpen = LID_CLOSED;
+      outPose.rightLidOpen = LID_CLOSED;
       return null;
     }
 
@@ -368,7 +415,6 @@ class SleepState implements AnimationState {
     if (this.phaseElapsed === 0) {
       // first frame of exit — capture current head pose
       this.exitStartQuat.copy(outPose.headQuat);
-      // re-read from the last output we wrote
     }
     this.phaseElapsed += _dt;
 
@@ -378,14 +424,12 @@ class SleepState implements AnimationState {
     // SLERP toward identity (so crossfade to idle wander handles the rest)
     outPose.headQuat.copy(this.exitStartQuat).slerp(_qA.identity(), eased);
 
-    // open eyes at 50%
-    if (t > 0.5) {
-      outPose.leftEyeScale.copy(_scaleOpen);
-      outPose.rightEyeScale.copy(_scaleOpen);
-    } else {
-      outPose.leftEyeScale.copy(_scaleClosed);
-      outPose.rightEyeScale.copy(_scaleClosed);
-    }
+    // Smoothly open eyes starting at 30% of exit duration
+    const lidOpenT = Math.max(0, (t - 0.3) / 0.7);
+    const lidEased = easeOutQuad(Math.min(lidOpenT, 1.0));
+    const lidVal = LID_CLOSED + (LID_OPEN - LID_CLOSED) * lidEased;
+    outPose.leftLidOpen = lidVal;
+    outPose.rightLidOpen = lidVal;
 
     if (t >= 1) {
       this.sleeping = false;
@@ -405,6 +449,12 @@ export interface UpdateResult {
   gestureCompleted: boolean;
   emoteCompleted: boolean;
 }
+
+// Idle blink timing
+const IDLE_BLINK_CLOSE = 0.05; // time to close
+const IDLE_BLINK_HOLD = 0.04; // hold shut
+const IDLE_BLINK_OPEN = 0.06; // time to re-open
+const IDLE_BLINK_TOTAL = IDLE_BLINK_CLOSE + IDLE_BLINK_HOLD + IDLE_BLINK_OPEN;
 
 export class FaceController {
   // States (persistent singletons)
@@ -429,7 +479,6 @@ export class FaceController {
   // Idle blink overlay (runs when activeState.controlsEyes === false)
   private nextBlinkTime = 3 + Math.random() * 2;
   private blinkStart = -1;
-  private readonly BLINK_DURATION = 0.15;
 
   // Entrance animation
   private entranceStart = -1;
@@ -506,10 +555,13 @@ export class FaceController {
   update(
     dt: number,
     head: THREE.Group,
-    leftEye: THREE.Mesh,
-    rightEye: THREE.Mesh,
+    leftLid: THREE.Group,
+    rightLid: THREE.Group,
   ): UpdateResult {
-    const result: UpdateResult = { gestureCompleted: false, emoteCompleted: false };
+    const result: UpdateResult = {
+      gestureCompleted: false,
+      emoteCompleted: false,
+    };
 
     // Clamp delta to prevent jumps on tab re-focus
     const clampedDt = Math.min(dt, 0.1);
@@ -569,12 +621,30 @@ export class FaceController {
 
       if (this.blinkStart >= 0) {
         const blinkElapsed = now - this.blinkStart;
-        if (blinkElapsed < this.BLINK_DURATION) {
-          this.outputPose.leftEyeScale.copy(_scaleClosed);
-          this.outputPose.rightEyeScale.copy(_scaleClosed);
+
+        if (blinkElapsed < IDLE_BLINK_CLOSE) {
+          // Closing
+          const t = easeInQuad(blinkElapsed / IDLE_BLINK_CLOSE);
+          const lidVal = LID_OPEN + (LID_CLOSED - LID_OPEN) * t;
+          this.outputPose.leftLidOpen = lidVal;
+          this.outputPose.rightLidOpen = lidVal;
+        } else if (blinkElapsed < IDLE_BLINK_CLOSE + IDLE_BLINK_HOLD) {
+          // Hold closed
+          this.outputPose.leftLidOpen = LID_CLOSED;
+          this.outputPose.rightLidOpen = LID_CLOSED;
+        } else if (blinkElapsed < IDLE_BLINK_TOTAL) {
+          // Opening
+          const t = easeOutQuad(
+            (blinkElapsed - IDLE_BLINK_CLOSE - IDLE_BLINK_HOLD) /
+              IDLE_BLINK_OPEN,
+          );
+          const lidVal = LID_CLOSED + (LID_OPEN - LID_CLOSED) * t;
+          this.outputPose.leftLidOpen = lidVal;
+          this.outputPose.rightLidOpen = lidVal;
         } else {
-          this.outputPose.leftEyeScale.copy(_scaleOpen);
-          this.outputPose.rightEyeScale.copy(_scaleOpen);
+          // Blink finished
+          this.outputPose.leftLidOpen = LID_OPEN;
+          this.outputPose.rightLidOpen = LID_OPEN;
           this.blinkStart = -1;
           this.nextBlinkTime = now + 3 + Math.random() * 2;
         }
@@ -583,8 +653,8 @@ export class FaceController {
 
     // Write to Three.js objects
     head.quaternion.copy(this.outputPose.headQuat);
-    leftEye.scale.copy(this.outputPose.leftEyeScale);
-    rightEye.scale.copy(this.outputPose.rightEyeScale);
+    leftLid.rotation.x = lidOpenToAngle(this.outputPose.leftLidOpen);
+    rightLid.rotation.x = lidOpenToAngle(this.outputPose.rightLidOpen);
 
     return result;
   }

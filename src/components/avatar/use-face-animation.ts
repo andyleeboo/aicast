@@ -6,16 +6,16 @@ import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface UseFaceAnimationOptions {
   headRef: React.RefObject<THREE.Group | null>;
-  leftEyeRef: React.RefObject<THREE.Mesh | null>;
-  rightEyeRef: React.RefObject<THREE.Mesh | null>;
+  leftLidRef: React.RefObject<THREE.Group | null>;
+  rightLidRef: React.RefObject<THREE.Group | null>;
   onGestureComplete: () => void;
   onEmoteComplete: () => void;
 }
 
 export function useFaceAnimation({
   headRef,
-  leftEyeRef,
-  rightEyeRef,
+  leftLidRef,
+  rightLidRef,
   onGestureComplete,
   onEmoteComplete,
 }: UseFaceAnimationOptions) {
@@ -33,11 +33,11 @@ export function useFaceAnimation({
   // Single useFrame — the ONLY place Three.js objects are mutated
   useFrame((_, delta) => {
     const head = headRef.current;
-    const leftEye = leftEyeRef.current;
-    const rightEye = rightEyeRef.current;
-    if (!head || !leftEye || !rightEye) return;
+    const leftLid = leftLidRef.current;
+    const rightLid = rightLidRef.current;
+    if (!head || !leftLid || !rightLid) return;
 
-    const result = controller.update(delta, head, leftEye, rightEye);
+    const result = controller.update(delta, head, leftLid, rightLid);
     isSleeping.current = controller.isSleeping;
 
     if (result.gestureCompleted) gestureCompleteCb.current();

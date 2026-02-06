@@ -3,12 +3,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
+import { UsernameModal } from "./username-modal";
 import { useAudioPlayer } from "@/hooks/use-audio-player";
 import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface BroadcastContentProps {
   channel: Channel;
 }
+
+const USERNAME_KEY = "aicast_username";
 
 export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [gesture, setGesture] = useState<GestureReaction | null>(null);
@@ -17,6 +20,10 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [username, setUsername] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(USERNAME_KEY);
+  });
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
@@ -114,6 +121,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setEmote(null);
   }, [fireEmote]);
 
+  function handleUsernameConfirm(name: string) {
+    localStorage.setItem(USERNAME_KEY, name);
+    setUsername(name);
+  }
+
   // Subscribe to SSE for remote-triggered actions (REST API)
   useEffect(() => {
     const es = new EventSource("/api/avatar/events");
@@ -140,6 +152,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      {/* Username modal */}
+      {!username && <UsernameModal onConfirm={handleUsernameConfirm} />}
+
       {/* Stream area */}
       <div className="flex flex-1 flex-col">
         {/* 3D Avatar */}
@@ -207,15 +222,24 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
       {/* Chat */}
       <div className="h-[45vh] w-full border-t border-border lg:h-auto lg:w-[380px] lg:border-l lg:border-t-0">
-        <ChatPanel
-          streamerId={channel.id}
-          streamerName={channel.streamer.name}
-          onAIResponse={handleAIResponse}
-          onEmote={handleEmote}
-          onSpeechBubble={handleSpeechBubble}
-          onAudioData={handleAudioData}
-          onUserInteraction={handleUserInteraction}
-        />
+        {username ? (
+          <ChatPanel
+            channelId={channel.id}
+            streamerId={channel.id}
+            streamerName={channel.streamer.name}
+            username={username}
+            onAIResponse={handleAIResponse}
+            onEmote={handleEmote}
+            onSpeechBubble={handleSpeechBubble}
+            onAudioData={handleAudioData}
+            onUserInteraction={handleUserInteraction}
+            isSpeaking={isSpeaking}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center bg-surface text-sm text-muted">
+            Pick a name to join chat
+          </div>
+        )}
       </div>
     </div>
   );
