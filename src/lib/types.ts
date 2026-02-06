@@ -19,7 +19,11 @@ export interface Channel {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
 }
+
+export type GestureReaction = "yes" | "no" | "uncertain";
+
+export type EmoteCommand = "wink" | "blink" | "sleep" | "wake";

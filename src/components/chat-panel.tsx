@@ -1,14 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChatMessage } from "@/lib/types";
+import type { ChatMessage, GestureReaction, EmoteCommand } from "@/lib/types";
+
+const SLASH_COMMANDS: Record<string, { emote: EmoteCommand; msg: string }> = {
+  "/wink":  { emote: "wink",  msg: "{name} winks at chat" },
+  "/blink": { emote: "blink", msg: "{name} blinks" },
+  "/sleep": { emote: "sleep", msg: "{name} falls asleep..." },
+  "/wake":  { emote: "wake",  msg: "{name} wakes up!" },
+};
 
 export function ChatPanel({
   streamerId,
   streamerName,
+  onAIResponse,
+  onEmote,
 }: {
   streamerId: string;
   streamerName: string;
+  onAIResponse?: (gesture: GestureReaction) => void;
+  onEmote?: (emote: EmoteCommand) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -32,6 +43,24 @@ export function ChatPanel({
   async function send() {
     const text = input.trim();
     if (!text || loading) return;
+
+    // Check for slash commands
+    const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
+    if (slashCmd) {
+      const systemMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: slashCmd.msg.replace("{name}", streamerName),
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, systemMsg]);
+      setInput("");
+      onEmote?.(slashCmd.emote);
+      return;
+    }
+
+    // Regular message — wake if sleeping
+    onEmote?.("wake");
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -65,6 +94,9 @@ export function ChatPanel({
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+      if (data.gesture && onAIResponse) {
+        onAIResponse(data.gesture as GestureReaction);
+      }
     } catch {
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -103,15 +135,21 @@ export function ChatPanel({
               <span className="mr-1 text-[10px] text-muted/50 opacity-0 transition-opacity group-hover:opacity-100">
                 {formatTime(msg.timestamp)}
               </span>
-              <span
-                className={`font-semibold ${
-                  msg.role === "user" ? "text-green-400" : "text-accent"
-                }`}
-              >
-                {msg.role === "user" ? "You" : streamerName}
-              </span>
-              <span className="text-muted">: </span>
-              <span className="text-foreground/90">{msg.content}</span>
+              {msg.role === "system" ? (
+                <span className="italic text-yellow-400">{msg.content}</span>
+              ) : (
+                <>
+                  <span
+                    className={`font-semibold ${
+                      msg.role === "user" ? "text-green-400" : "text-accent"
+                    }`}
+                  >
+                    {msg.role === "user" ? "You" : streamerName}
+                  </span>
+                  <span className="text-muted">: </span>
+                  <span className="text-foreground/90">{msg.content}</span>
+                </>
+              )}
             </div>
           ))}
           {loading && (
