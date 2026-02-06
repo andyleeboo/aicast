@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chat } from "@/lib/gemini";
 import { getChannel } from "@/lib/mock-data";
-import { ChatMessage, GestureReaction } from "@/lib/types";
+import { ChatMessage, GestureReaction, EmoteCommand } from "@/lib/types";
+import { buildActionSystemPrompt } from "@/lib/avatar-actions";
+import { emitAction } from "@/lib/action-bus";
 
-const GESTURE_SUFFIX = `
+const GESTURE_TAGS = ["NOD", "SHAKE", "TILT"] as const;
+const EMOTE_TAGS = ["WINK", "BLINK", "SLEEP"] as const;
 
-IMPORTANT: At the very start of every response, include exactly one gesture tag on its own:
-[NOD] - when agreeing, acknowledging, being friendly, or saying yes
-[SHAKE] - when disagreeing, denying, or saying no
-[TILT] - when uncertain, thinking, being playful, or pondering
-Then continue your response normally after the tag. Do NOT include the tag in your spoken text.`;
-
-const TAG_REGEX = /^\[(NOD|SHAKE|TILT)\]\s*/;
+const TAG_REGEX = /^\[([A-Z]+)\]\s*/;
 
 const tagToGesture: Record<string, GestureReaction> = {
   NOD: "yes",
   SHAKE: "no",
   TILT: "uncertain",
+};
+
+const tagToEmote: Record<string, EmoteCommand> = {
+  WINK: "wink",
+  BLINK: "blink",
+  SLEEP: "sleep",
 };
 
 export async function POST(req: NextRequest) {
@@ -43,14 +46,51 @@ export async function POST(req: NextRequest) {
 
   const raw = await chat(
     messages,
-    channel.streamer.personality + GESTURE_SUFFIX,
+    channel.streamer.personality + buildActionSystemPrompt(),
   );
 
-  const match = raw.match(TAG_REGEX);
-  const gesture: GestureReaction = match
-    ? tagToGesture[match[1]] ?? "uncertain"
-    : "uncertain";
-  const response = match ? raw.replace(TAG_REGEX, "") : raw;
+  // Parse leading tags: [GESTURE] [EMOTE] response text...
+  let remaining = raw;
+  let gesture: GestureReaction = "uncertain";
+  let emote: EmoteCommand | null = null;
 
-  return NextResponse.json({ response, gesture });
+  // First tag — expect gesture
+  const firstMatch = remaining.match(TAG_REGEX);
+  if (firstMatch) {
+    const tag = firstMatch[1];
+    if (GESTURE_TAGS.includes(tag as (typeof GESTURE_TAGS)[number])) {
+      gesture = tagToGesture[tag];
+      remaining = remaining.replace(TAG_REGEX, "");
+    } else if (EMOTE_TAGS.includes(tag as (typeof EMOTE_TAGS)[number])) {
+      // AI put an emote first — accept it
+      emote = tagToEmote[tag];
+      remaining = remaining.replace(TAG_REGEX, "");
+    }
+  }
+
+  // Second tag — expect emote (or gesture if first was emote)
+  const secondMatch = remaining.match(TAG_REGEX);
+  if (secondMatch) {
+    const tag = secondMatch[1];
+    if (!emote && EMOTE_TAGS.includes(tag as (typeof EMOTE_TAGS)[number])) {
+      emote = tagToEmote[tag];
+      remaining = remaining.replace(TAG_REGEX, "");
+    } else if (
+      gesture === "uncertain" &&
+      GESTURE_TAGS.includes(tag as (typeof GESTURE_TAGS)[number])
+    ) {
+      gesture = tagToGesture[tag];
+      remaining = remaining.replace(TAG_REGEX, "");
+    }
+  }
+
+  const response = remaining.trim();
+
+  // Emit to action bus for SSE sync
+  emitAction({ type: "gesture", id: `gesture:${gesture}` });
+  if (emote) {
+    emitAction({ type: "emote", id: `emote:${emote}` });
+  }
+
+  return NextResponse.json({ response, gesture, emote });
 }

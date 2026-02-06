@@ -97,6 +97,9 @@ export function ChatPanel({
       if (data.gesture && onAIResponse) {
         onAIResponse(data.gesture as GestureReaction);
       }
+      if (data.emote) {
+        onEmote?.(data.emote as EmoteCommand);
+      }
     } catch {
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),

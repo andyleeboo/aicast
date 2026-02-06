@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
 import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
@@ -62,6 +62,30 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
     setEmote(null);
   }, [fireEmote]);
+
+  // Subscribe to SSE for remote-triggered actions (REST API)
+  useEffect(() => {
+    const es = new EventSource("/api/avatar/events");
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as {
+          type: "gesture" | "emote";
+          id: string;
+        };
+        const value = data.id.split(":")[1];
+        if (data.type === "gesture") {
+          setGesture(value as GestureReaction);
+        } else if (data.type === "emote") {
+          handleEmote(value as EmoteCommand);
+        }
+      } catch {
+        // Ignore malformed events
+      }
+    };
+
+    return () => es.close();
+  }, [handleEmote]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
