@@ -1,40 +1,34 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getSupabase } from "@/lib/supabase";
 
-export function useViewerCount(channelId: string, username?: string): number {
+const POLL_INTERVAL = 15_000;
+
+export function useViewerCount(_channelId: string): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-    const channel = supabase.channel(`presence:${channelId}`, {
-      config: { presence: { key: username || "anon" } },
-    });
+    let mounted = true;
 
-    channel
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState();
-        const total = Object.values(state).reduce(
-          (sum, arr) => sum + arr.length,
-          0,
-        );
-        setCount(total);
-      })
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          await channel.track({
-            username: username || "anon",
-            online_at: new Date().toISOString(),
-          });
+    async function poll() {
+      try {
+        const res = await fetch("/api/viewers");
+        if (res.ok && mounted) {
+          const { count: c } = await res.json();
+          setCount(c);
         }
-      });
+      } catch {
+        // Silently retry on next interval
+      }
+    }
 
+    poll();
+    const id = setInterval(poll, POLL_INTERVAL);
     return () => {
-      supabase.removeChannel(channel);
+      mounted = false;
+      clearInterval(id);
     };
-  }, [channelId, username]);
+  }, []);
 
   return count;
 }

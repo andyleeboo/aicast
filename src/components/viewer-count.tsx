@@ -2,13 +2,7 @@
 
 import { useViewerCount } from "@/hooks/use-viewer-count";
 
-export function ViewerCount({
-  channelId,
-  username,
-}: {
-  channelId: string;
-  username?: string;
-}) {
-  const count = useViewerCount(channelId, username);
+export function ViewerCount({ channelId }: { channelId: string }) {
+  const count = useViewerCount(channelId);
   return <>{count.toLocaleString()} viewers</>;
 }

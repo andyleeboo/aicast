@@ -32,3 +32,7 @@ export function subscribe(fn: ActionListener): () => void {
     listeners.delete(fn);
   };
 }
+
+export function getListenerCount(): number {
+  return getListeners().size;
+}
