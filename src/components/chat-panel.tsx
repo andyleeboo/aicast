@@ -31,6 +31,7 @@ export function ChatPanel({
   onEmote,
   onSpeechBubble,
   onAudioData,
+  onUserInteraction,
   isSpeaking,
 }: {
   channelId: string;
@@ -41,6 +42,7 @@ export function ChatPanel({
   onEmote?: (emote: EmoteCommand) => void;
   onSpeechBubble?: (text: string | null) => void;
   onAudioData?: (data: string) => void;
+  onUserInteraction?: () => void;
   isSpeaking?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -196,6 +198,7 @@ export function ChatPanel({
   async function send() {
     const text = input.trim();
     if (!text) return;
+    onUserInteraction?.();
 
     // Check for slash commands — bypass queue entirely
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
@@ -291,15 +294,14 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {(loading || isSpeaking) && (
-            <div className="text-sm">
-              <span className="font-semibold text-accent">{streamerName}</span>
-              <span className="text-muted"> {isSpeaking ? "is speaking" : "is typing"}</span>
-              <span className="inline-flex ml-0.5">
-                <span className="animate-bounce text-muted [animation-delay:0ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:150ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:300ms]">.</span>
-              </span>
+          {messages.length === 0 && !loading && (
+            <div className="text-center text-xs text-muted/60 py-8">
+              No messages yet — say something!
+            </div>
+          )}
+          {loading && (
+            <div className="text-xs text-muted/60 italic">
+              {streamerName} is reading chat...
             </div>
           )}
         </div>
