@@ -20,7 +20,7 @@ export async function chat(
   }));
 
   const response = await getClient().models.generateContent({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     contents,
     config: {
       systemInstruction: systemPrompt,
