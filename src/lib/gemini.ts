@@ -1,7 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { ChatMessage } from "./types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+let ai: GoogleGenAI | undefined;
+
+function getClient(): GoogleGenAI {
+  if (!ai) {
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
+  }
+  return ai;
+}
 
 export async function chat(
   messages: ChatMessage[],
@@ -12,7 +19,7 @@ export async function chat(
     parts: [{ text: m.content }],
   }));
 
-  const response = await ai.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: "gemini-2.0-flash",
     contents,
     config: {
