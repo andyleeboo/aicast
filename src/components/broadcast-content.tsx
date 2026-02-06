@@ -170,8 +170,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       {/* Username modal */}
       {!username && <UsernameModal onConfirm={handleUsernameConfirm} />}
 
-      {/* Stream area */}
-      <div className="flex flex-1 flex-col">
+      {/* Stream area — fixed height on mobile so keyboard only shrinks chat */}
+      <div className="flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:flex-1 lg:shrink">
         {/* 3D Avatar */}
         <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
           <AvatarCanvas
@@ -182,9 +182,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             isSpeaking={isSpeaking}
           />
 
-          {/* Speech bubble */}
+          {/* Speech bubble — hidden on mobile to avoid covering Bob's face */}
           <div
-            className={`pointer-events-none absolute left-1/2 top-6 z-10 max-w-md -translate-x-1/2 transition-all duration-300 ${
+            className={`pointer-events-none absolute left-1/2 top-6 z-10 max-w-md -translate-x-1/2 transition-all duration-300 max-lg:hidden ${
               speechBubble
                 ? "translate-y-0 opacity-100"
                 : "-translate-y-4 opacity-0"
@@ -237,7 +237,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       </div>
 
       {/* Chat */}
-      <div className="h-[45vh] w-full border-t border-border lg:h-auto lg:w-[380px] lg:border-l lg:border-t-0">
+      <div className="min-h-0 flex-1 w-full border-t border-border lg:h-auto lg:flex-none lg:w-[380px] lg:border-l lg:border-t-0">
         {username ? (
           <ChatPanel
             channelId={channel.id}

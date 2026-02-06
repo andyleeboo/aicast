@@ -232,7 +232,7 @@ export function ChatPanel({
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
         <div className="space-y-2">
           {messages.map((msg) => (
             <div key={msg.id} className="group text-sm leading-relaxed">
@@ -283,7 +283,7 @@ export function ChatPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Send a message..."
-            className="flex-1 rounded-lg bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
+            className="flex-1 rounded-lg bg-background px-3 py-2 text-base text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
           />
           <button
             type="submit"
