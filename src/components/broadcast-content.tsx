@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
+import { useAudioPlayer } from "@/hooks/use-audio-player";
 import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
 
 interface BroadcastContentProps {
@@ -14,19 +15,50 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [emote, setEmote] = useState<{ command: EmoteCommand; key: number } | null>(null);
   const [sleeping, setSleeping] = useState(false);
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
   const pendingEmote = useRef<EmoteCommand | null>(null);
+  const mutedRef = useRef(muted);
+
+  // Keep mutedRef in sync so the audio callback sees the latest value
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+
+  const player = useAudioPlayer({
+    onEnd: () => {
+      setIsSpeaking(false);
+      setSpeechBubble(null);
+    },
+  });
 
   const handleSpeechBubble = useCallback((text: string | null) => {
     if (speechTimeout.current) clearTimeout(speechTimeout.current);
     setSpeechBubble(text);
     if (text) {
-      // Show bubble for 5 seconds then fade out
+      // Fallback: show bubble for 5 seconds if no audio drives it
       speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
     }
   }, []);
+
+  const handleAudioData = useCallback(
+    (data: string) => {
+      if (mutedRef.current) return;
+
+      // Clear the fallback timeout — audio end will dismiss the bubble
+      if (speechTimeout.current) {
+        clearTimeout(speechTimeout.current);
+        speechTimeout.current = null;
+      }
+
+      setIsSpeaking(true);
+      player.play(data);
+    },
+    [player],
+  );
 
   const fireEmote = useCallback((cmd: EmoteCommand) => {
     emoteCounter.current += 1;
@@ -140,6 +172,25 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             <p className="text-sm font-semibold">{channel.streamer.name}</p>
             <p className="truncate text-xs text-muted">{channel.description}</p>
           </div>
+          <button
+            onClick={() => {
+              setMuted((m) => !m);
+              if (!muted) player.stop();
+            }}
+            className="shrink-0 rounded-full bg-surface-hover px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
+            title={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM17.78 9.22a.75.75 0 10-1.06 1.06L18.44 12l-1.72 1.72a.75.75 0 101.06 1.06l1.72-1.72 1.72 1.72a.75.75 0 101.06-1.06L20.56 12l1.72-1.72a.75.75 0 10-1.06-1.06l-1.72 1.72-1.72-1.72z" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM18.584 5.106a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 01-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
+                <path d="M15.932 7.757a.75.75 0 011.061 0 6 6 0 010 8.486.75.75 0 01-1.06-1.061 4.5 4.5 0 000-6.364.75.75 0 010-1.06z" />
+              </svg>
+            )}
+          </button>
           <span className="shrink-0 rounded-full bg-surface-hover px-3 py-1 text-xs text-muted">
             {channel.category}
           </span>
@@ -154,6 +205,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           onAIResponse={handleAIResponse}
           onEmote={handleEmote}
           onSpeechBubble={handleSpeechBubble}
+          onAudioData={handleAudioData}
+          isSpeaking={isSpeaking}
         />
       </div>
     </div>

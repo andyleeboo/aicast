@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chat } from "@/lib/gemini";
+import { chat, textToSpeech } from "@/lib/gemini";
 import { getChannel } from "@/lib/mock-data";
 import {
   ChatMessage,
@@ -155,11 +155,14 @@ export async function POST(req: NextRequest) {
 
   const { response, gesture, emote } = parseTags(raw);
 
+  // Generate speech audio (graceful degradation — null on failure)
+  const audioData = await textToSpeech(response);
+
   // Emit to action bus for SSE sync
   emitAction({ type: "gesture", id: `gesture:${gesture}` });
   if (emote) {
     emitAction({ type: "emote", id: `emote:${emote}` });
   }
 
-  return NextResponse.json({ response, gesture, emote });
+  return NextResponse.json({ response, gesture, emote, audioData });
 }
