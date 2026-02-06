@@ -8,6 +8,7 @@ export function useViewerCount(channelId: string, username?: string): number {
 
   useEffect(() => {
     const supabase = getSupabase();
+    if (!supabase) return;
     const channel = supabase.channel(`presence:${channelId}`, {
       config: { presence: { key: username || "anon" } },
     });

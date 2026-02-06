@@ -1,6 +1,10 @@
 export interface ActionEvent {
-  type: "gesture" | "emote";
-  id: string; // e.g. "gesture:yes", "emote:wink"
+  type: "gesture" | "emote" | "ai-response";
+  id: string; // e.g. "gesture:yes", "emote:wink", or unique response id
+  response?: string;
+  audioData?: string | null;
+  gesture?: string;
+  emote?: string | null;
 }
 
 type ActionListener = (event: ActionEvent) => void;

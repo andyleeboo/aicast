@@ -9,11 +9,8 @@ import type {
   MessageRow,
   GestureReaction,
   EmoteCommand,
-  BatchedChatMessage,
-  ChatResponse,
 } from "@/lib/types";
-
-const BATCH_WINDOW_MS = 3000;
+import type { AiMessage } from "./broadcast-content";
 
 const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureReaction; msg: string }> = {
   // Gestures
@@ -51,43 +48,51 @@ const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureRe
   "/shy":        { emote: "shy",           msg: "{name} is shy..." },
 };
 
+function useAppendAiMessage(
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+) {
+  return useCallback(
+    (ai: AiMessage) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.content === ai.content && m.role === "assistant"))
+          return prev;
+        return [
+          ...prev,
+          {
+            id: ai.id,
+            role: "assistant" as const,
+            content: ai.content,
+            timestamp: ai.timestamp,
+          },
+        ];
+      });
+    },
+    [setMessages],
+  );
+}
+
 export function ChatPanel({
   channelId,
-  streamerId,
   streamerName,
   username,
-  onAIResponse,
   onEmote,
-  onSpeechBubble,
-  onAudioData,
+  onGesture,
   onUserInteraction,
-  isSpeaking,
+  aiMessage,
 }: {
   channelId: string;
-  streamerId: string;
   streamerName: string;
   username: string;
-  onAIResponse?: (gesture: GestureReaction) => void;
   onEmote?: (emote: EmoteCommand) => void;
-  onSpeechBubble?: (text: string | null) => void;
-  onAudioData?: (data: string) => void;
+  onGesture?: (gesture: GestureReaction) => void;
   onUserInteraction?: () => void;
-  isSpeaking?: boolean;
+  aiMessage?: AiMessage | null;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const batchQueue = useRef<BatchedChatMessage[]>([]);
-  const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const messagesRef = useRef(messages);
-
-  // Keep messagesRef in sync with messages state
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -97,10 +102,19 @@ export function ChatPanel({
     });
   }, [messages]);
 
+  // Append AI responses received via SSE broadcast
+  const appendAiMessage = useAppendAiMessage(setMessages);
+  useEffect(() => {
+    if (aiMessage) appendAiMessage(aiMessage);
+  }, [aiMessage, appendAiMessage]);
+
   // Load initial messages + subscribe to Realtime
   useEffect(() => {
     let mounted = true;
-    const supabase = getSupabase();
+    const sb = getSupabase();
+    if (!sb) return;
+    // Assign to const so TS narrows to non-null inside closures
+    const supabase = sb;
 
     // Load last 50 messages
     async function loadMessages() {
@@ -147,89 +161,12 @@ export function ChatPanel({
     };
   }, [channelId]);
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (batchTimer.current) clearTimeout(batchTimer.current);
-    };
-  }, []);
-
-  const flushBatch = useCallback(async () => {
-    const batch = batchQueue.current;
-    batchQueue.current = [];
-    batchTimer.current = null;
-
-    if (batch.length === 0) return;
-
-    // Wake the avatar when real messages come in
-    onEmote?.("wake");
-
-    // Build conversation history from recent messages for Gemini context
-    const recentMessages = messagesRef.current.slice(-20);
-    const history: ChatMessage[] = recentMessages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.role === "user" && m.username
-          ? `${m.username}: ${m.content}`
-          : m.content,
-        timestamp: m.timestamp,
-      }));
-
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          batch,
-          streamerId,
-          history,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `API error ${res.status}`);
-      }
-
-      const data = (await res.json()) as ChatResponse;
-
-      // AI response message arrives via Realtime subscription (inserted by API route)
-      // We only use HTTP response for gesture/emote/audio callbacks
-      onAIResponse?.(data.gesture);
-      onSpeechBubble?.(data.response);
-      if (data.audioData) {
-        onAudioData?.(data.audioData);
-      }
-      if (data.emote) {
-        onEmote?.(data.emote);
-      }
-    } catch {
-      const errMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "system",
-        content: "Failed to reach the AI — try again in a sec.",
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, errMsg]);
-    } finally {
-      setLoading(false);
-      // If new messages queued during the API call, start a new timer
-      if (batchQueue.current.length > 0) {
-        batchTimer.current = setTimeout(flushBatch, BATCH_WINDOW_MS);
-      }
-    }
-  }, [streamerId, onAIResponse, onEmote, onSpeechBubble, onAudioData]);
-
   async function send() {
     const text = input.trim();
     if (!text) return;
     onUserInteraction?.();
 
-    // Check for slash commands — bypass queue entirely
+    // Check for slash commands — bypass API entirely
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
     if (slashCmd) {
       const systemMsg: ChatMessage = {
@@ -241,7 +178,7 @@ export function ChatPanel({
       setMessages((prev) => [...prev, systemMsg]);
       setInput("");
       if (slashCmd.emote) onEmote?.(slashCmd.emote);
-      if (slashCmd.gesture) onAIResponse?.(slashCmd.gesture);
+      if (slashCmd.gesture) onGesture?.(slashCmd.gesture);
       return;
     }
 
@@ -256,28 +193,25 @@ export function ChatPanel({
     setError(null);
     setInput("");
 
-    // INSERT user message into Supabase — it appears via Realtime for all viewers
-    await getSupabase().from("messages").insert({
-      channel_id: channelId,
+    // Add user message to local state immediately (optimistic)
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
       role: "user",
       content: text,
       username,
-    });
-
-    // Enqueue for batch (AI response)
-    const batchMsg: BatchedChatMessage = {
-      id: crypto.randomUUID(),
-      username,
-      content: text,
       timestamp: Date.now(),
-      priority: "normal",
     };
-    batchQueue.current.push(batchMsg);
+    setMessages((prev) => [...prev, userMsg]);
 
-    // Start timer on first message in queue
-    if (!batchTimer.current) {
-      batchTimer.current = setTimeout(flushBatch, BATCH_WINDOW_MS);
-    }
+    // Fire-and-forget to server queue
+    fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, content: text, channelId }),
+    }).catch(() => {
+      // Silently fail — user message is already shown optimistically
+      // and Supabase Realtime will sync if available
+    });
   }
 
   function formatTime(ts: number) {
@@ -324,14 +258,9 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {messages.length === 0 && !loading && (
+          {messages.length === 0 && (
             <div className="text-center text-xs text-muted/60 py-8">
               No messages yet — say something!
-            </div>
-          )}
-          {loading && (
-            <div className="text-xs text-muted/60 italic">
-              {streamerName} is reading chat...
             </div>
           )}
         </div>

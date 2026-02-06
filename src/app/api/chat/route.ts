@@ -1,188 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chat, textToSpeech } from "@/lib/gemini";
-import { getChannelFromDB } from "@/lib/mock-data";
-import {
-  ChatMessage,
-  GestureReaction,
-  EmoteCommand,
-  BatchedChatMessage,
-} from "@/lib/types";
-import {
-  AVATAR_ACTIONS,
-  buildActionSystemPrompt,
-  buildBatchSystemPrompt,
-} from "@/lib/avatar-actions";
-import { emitAction } from "@/lib/action-bus";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { validateMessage } from "@/lib/moderation";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { pushMessage, pushHistory } from "@/lib/chat-queue";
+import type { BatchedChatMessage } from "@/lib/types";
 
-const TAG_REGEX = /^\[([A-Z_]+)\]\s*/;
-
-const tagToGesture: Record<string, GestureReaction> = {
-  NOD: "yes",
-  SHAKE: "no",
-  TILT: "uncertain",
-};
-
-const tagToEmote: Record<string, EmoteCommand> = {};
-for (const action of AVATAR_ACTIONS) {
-  if (action.type === "emote") {
-    tagToEmote[action.tag] = action.id.split(":")[1] as EmoteCommand;
-  }
-}
-
-const PRIORITY_ORDER: Record<string, number> = {
-  donation: 0,
-  highlight: 1,
-  normal: 2,
-};
-
-function formatBatchForAI(batch: BatchedChatMessage[]): string {
-  const sorted = [...batch].sort(
-    (a, b) => (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2),
-  );
-
-  const lines = sorted.map((msg) => {
-    let prefix = "";
-    if (msg.priority === "donation" && msg.donationAmount) {
-      prefix = `[DONATION $${msg.donationAmount}] `;
-    } else if (msg.priority === "highlight") {
-      prefix = "[HIGHLIGHTED] ";
-    }
-    return `${prefix}${msg.username}: ${msg.content}`;
-  });
-
-  return `[CHAT BATCH - ${batch.length} message(s)]\n${lines.join("\n")}`;
-}
-
-function parseTags(raw: string) {
-  let remaining = raw;
-  let gesture: GestureReaction = "uncertain";
-  let emote: EmoteCommand | null = null;
-
-  // First tag — expect gesture
-  const firstMatch = remaining.match(TAG_REGEX);
-  if (firstMatch) {
-    const tag = firstMatch[1];
-    if (tag in tagToGesture) {
-      gesture = tagToGesture[tag];
-      remaining = remaining.replace(TAG_REGEX, "");
-    } else if (tag in tagToEmote) {
-      emote = tagToEmote[tag];
-      remaining = remaining.replace(TAG_REGEX, "");
-    }
-  }
-
-  // Second tag — expect emote (or gesture if first was emote)
-  const secondMatch = remaining.match(TAG_REGEX);
-  if (secondMatch) {
-    const tag = secondMatch[1];
-    if (!emote && tag in tagToEmote) {
-      emote = tagToEmote[tag];
-      remaining = remaining.replace(TAG_REGEX, "");
-    } else if (gesture === "uncertain" && tag in tagToGesture) {
-      gesture = tagToGesture[tag];
-      remaining = remaining.replace(TAG_REGEX, "");
-    }
-  }
-
-  return { response: remaining.trim(), gesture, emote };
-}
+// Side-effect: registers the flush handler that wires queue → Gemini → SSE broadcast
+import "@/lib/chat-queue-init";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
+  const { username, content, channelId } = body as {
+    username: string;
+    content: string;
+    channelId: string;
+  };
 
-  // Detect batch vs legacy format
-  const isBatch = Array.isArray(body.batch);
-  const streamerId: string = body.streamerId;
-  const history: ChatMessage[] = body.history ?? [];
-
-  const channel = await getChannelFromDB(streamerId);
-  if (!channel) {
-    return NextResponse.json({ error: "Channel not found" }, { status: 404 });
-  }
-
-  // Server-side moderation for batch messages
-  if (isBatch) {
-    const batch: BatchedChatMessage[] = body.batch;
-    for (const msg of batch) {
-      const check = validateMessage(msg.content);
-      if (!check.valid) {
-        return NextResponse.json(
-          { error: check.error ?? "Message rejected" },
-          { status: 400 },
-        );
-      }
-    }
-  }
-
-  let messages: ChatMessage[];
-  let systemPrompt: string;
-
-  if (isBatch) {
-    const batch: BatchedChatMessage[] = body.batch;
-    const batchText = formatBatchForAI(batch);
-
-    messages = [
-      ...history,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: batchText,
-        timestamp: Date.now(),
-      },
-    ];
-
-    systemPrompt =
-      channel.streamer.personality +
-      buildBatchSystemPrompt() +
-      buildActionSystemPrompt();
-  } else {
-    // Legacy single-message format
-    const message: string = body.message;
-    messages = [
-      ...history,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: message,
-        timestamp: Date.now(),
-      },
-    ];
-
-    systemPrompt =
-      channel.streamer.personality + buildActionSystemPrompt();
-  }
-
-  let raw: string;
-  try {
-    raw = await chat(messages, systemPrompt);
-  } catch (err) {
-    console.error("[chat] Gemini API error:", err);
+  if (!username || !content || !channelId) {
     return NextResponse.json(
-      { error: "AI service unavailable" },
-      { status: 502 },
+      { error: "Missing required fields" },
+      { status: 400 },
     );
   }
 
-  const { response, gesture, emote } = parseTags(raw);
-
-  // Generate speech audio (graceful degradation — null on failure)
-  const audioData = await textToSpeech(response);
-
-  // Insert AI response into messages table
-  const supabase = createServerSupabaseClient();
-  await supabase.from("messages").insert({
-    channel_id: streamerId,
-    role: "assistant",
-    content: response,
-  });
-
-  // Emit to action bus for SSE sync
-  emitAction({ type: "gesture", id: `gesture:${gesture}` });
-  if (emote) {
-    emitAction({ type: "emote", id: `emote:${emote}` });
+  // Server-side moderation
+  const check = validateMessage(content);
+  if (!check.valid) {
+    return NextResponse.json(
+      { error: check.error ?? "Message rejected" },
+      { status: 400 },
+    );
   }
 
-  return NextResponse.json({ response, gesture, emote, audioData });
+  // Push into server-side batch queue (will flush after 3s window)
+  const batchMsg: BatchedChatMessage = {
+    id: crypto.randomUUID(),
+    username,
+    content,
+    timestamp: Date.now(),
+    priority: "normal",
+  };
+  pushMessage(batchMsg);
+
+  // Add user message to rolling history for Gemini context
+  pushHistory({
+    id: batchMsg.id,
+    role: "user",
+    content: `${username}: ${content}`,
+    timestamp: batchMsg.timestamp,
+  });
+
+  // Persist to Supabase if available
+  const supabase = createServerSupabaseClient();
+  if (supabase) {
+    await supabase.from("messages").insert({
+      channel_id: channelId,
+      role: "user",
+      content,
+      username,
+    });
+  }
+
+  return NextResponse.json({ ok: true });
 }

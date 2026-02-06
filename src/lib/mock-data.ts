@@ -38,6 +38,7 @@ export async function getChannelFromDB(
   id: string,
 ): Promise<Channel | undefined> {
   const supabase = createServerSupabaseClient();
+  if (!supabase) return getChannel(id);
 
   const { data: channel } = await supabase
     .from("channels")
@@ -45,7 +46,7 @@ export async function getChannelFromDB(
     .eq("id", id)
     .single();
 
-  if (!channel) return undefined;
+  if (!channel) return getChannel(id);
 
   const { data: streamer } = await supabase
     .from("streamers")
@@ -53,7 +54,7 @@ export async function getChannelFromDB(
     .eq("channel_id", id)
     .single();
 
-  if (!streamer) return undefined;
+  if (!streamer) return getChannel(id);
 
   return {
     id: channel.id,

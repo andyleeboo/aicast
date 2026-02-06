@@ -11,6 +11,12 @@ interface BroadcastContentProps {
   channel: Channel;
 }
 
+export interface AiMessage {
+  id: string;
+  content: string;
+  timestamp: number;
+}
+
 const USERNAME_KEY = "aicast_username";
 
 export function BroadcastContent({ channel }: BroadcastContentProps) {
@@ -20,6 +26,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [latestAiMessage, setLatestAiMessage] = useState<AiMessage | null>(null);
   const [username, setUsername] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return localStorage.getItem(USERNAME_KEY);
@@ -80,10 +87,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setEmote({ command: cmd, key: emoteCounter.current });
   }, []);
 
-  const handleAIResponse = useCallback((g: GestureReaction) => {
-    setGesture(g);
-  }, []);
-
   const handleGestureComplete = useCallback(() => {
     setGesture(null);
   }, []);
@@ -126,16 +129,28 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setUsername(name);
   }
 
-  // Subscribe to SSE for remote-triggered actions (REST API)
+  // Subscribe to SSE for remote-triggered actions and AI responses
   useEffect(() => {
     const es = new EventSource("/api/avatar/events");
 
     es.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as {
-          type: "gesture" | "emote";
-          id: string;
-        };
+        const data = JSON.parse(event.data);
+
+        if (data.type === "ai-response") {
+          // Broadcast AI response: speech bubble, audio, gesture, emote, chat message
+          if (data.response) handleSpeechBubble(data.response);
+          if (data.audioData) handleAudioData(data.audioData);
+          if (data.gesture) setGesture(data.gesture as GestureReaction);
+          if (data.emote) handleEmote(data.emote as EmoteCommand);
+          setLatestAiMessage({
+            id: data.id,
+            content: data.response,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
         const value = data.id.split(":")[1];
         if (data.type === "gesture") {
           setGesture(value as GestureReaction);
@@ -148,7 +163,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
 
     return () => es.close();
-  }, [handleEmote]);
+  }, [handleEmote, handleSpeechBubble, handleAudioData]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -226,15 +241,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         {username ? (
           <ChatPanel
             channelId={channel.id}
-            streamerId={channel.id}
             streamerName={channel.streamer.name}
             username={username}
-            onAIResponse={handleAIResponse}
             onEmote={handleEmote}
-            onSpeechBubble={handleSpeechBubble}
-            onAudioData={handleAudioData}
+            onGesture={setGesture}
             onUserInteraction={handleUserInteraction}
-            isSpeaking={isSpeaking}
+            aiMessage={latestAiMessage}
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-surface text-sm text-muted">
