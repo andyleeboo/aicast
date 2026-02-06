@@ -9,6 +9,7 @@ interface HeadSceneProps {
   onGestureComplete: () => void;
   emote: { command: EmoteCommand; key: number } | null;
   onEmoteComplete: () => void;
+  isSpeaking: boolean;
 }
 
 export function HeadScene({
@@ -16,17 +17,21 @@ export function HeadScene({
   onGestureComplete,
   emote,
   onEmoteComplete,
+  isSpeaking,
 }: HeadSceneProps) {
   const headRef = useRef<THREE.Group>(null);
   const leftEyeRef = useRef<THREE.Mesh>(null);
   const rightEyeRef = useRef<THREE.Mesh>(null);
+  const mouthRef = useRef<THREE.Mesh>(null);
 
   const { playGesture, triggerEmote, isSleeping } = useFaceAnimation({
     headRef,
     leftEyeRef,
     rightEyeRef,
+    mouthRef,
     onGestureComplete,
     onEmoteComplete,
+    isSpeaking,
   });
 
   // Trigger gestures (skip during sleep)
@@ -57,6 +62,7 @@ export function HeadScene({
         ref={headRef}
         leftEyeRef={leftEyeRef}
         rightEyeRef={rightEyeRef}
+        mouthRef={mouthRef}
       />
     </>
   );

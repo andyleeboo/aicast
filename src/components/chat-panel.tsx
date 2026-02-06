@@ -11,11 +11,40 @@ import type {
 
 const BATCH_WINDOW_MS = 3000;
 
-const SLASH_COMMANDS: Record<string, { emote: EmoteCommand; msg: string }> = {
-  "/wink":  { emote: "wink",  msg: "{name} winks at chat" },
-  "/blink": { emote: "blink", msg: "{name} blinks" },
-  "/sleep": { emote: "sleep", msg: "{name} falls asleep..." },
-  "/wake":  { emote: "wake",  msg: "{name} wakes up!" },
+const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureReaction; msg: string }> = {
+  // Gestures
+  "/nod":        { gesture: "yes",         msg: "{name} nods" },
+  "/shake":      { gesture: "no",          msg: "{name} shakes head" },
+  // Core controls
+  "/wink":       { emote: "wink",          msg: "{name} winks at chat" },
+  "/blink":      { emote: "blink",         msg: "{name} blinks" },
+  "/sleep":      { emote: "sleep",         msg: "{name} falls asleep..." },
+  "/wake":       { emote: "wake",          msg: "{name} wakes up!" },
+  // Emotions
+  "/happy":      { emote: "happy",         msg: "{name} beams with joy!" },
+  "/sad":        { emote: "sad",           msg: "{name} looks sad..." },
+  "/surprised":  { emote: "surprised",     msg: "{name} is shocked!" },
+  "/thinking":   { emote: "thinking",      msg: "{name} ponders..." },
+  "/angry":      { emote: "angry",         msg: "{name} is angry!" },
+  "/confused":   { emote: "confused",      msg: "{name} is confused..." },
+  "/excited":    { emote: "excited",       msg: "{name} is hyped!" },
+  "/love":       { emote: "love",          msg: "{name} is in love!" },
+  "/laughing":   { emote: "laughing",      msg: "{name} is cracking up!" },
+  "/crying":     { emote: "crying",        msg: "{name} is crying!" },
+  "/smug":       { emote: "smug",          msg: "{name} looks smug" },
+  "/scared":     { emote: "scared",        msg: "{name} is terrified!" },
+  "/cool":       { emote: "cool",          msg: "{name} is too cool" },
+  "/dead":       { emote: "dead",          msg: "{name} is deceased" },
+  "/uwu":        { emote: "uwu",          msg: "{name} goes uwu" },
+  "/sparkles":   { emote: "sparkles",      msg: "{name} sparkles!" },
+  "/judging":    { emote: "judging",       msg: "{name} judges you" },
+  "/mindblown":  { emote: "mindblown",     msg: "{name}'s mind is blown" },
+  "/shrug":      { emote: "shrug",         msg: "{name} shrugs" },
+  "/flirty":     { emote: "flirty",        msg: "{name} flirts" },
+  "/hyper":      { emote: "hyper",         msg: "{name} is HYPER!" },
+  "/pouting":    { emote: "pouting",       msg: "{name} pouts" },
+  "/derp":       { emote: "derp",          msg: "{name} derps out" },
+  "/shy":        { emote: "shy",           msg: "{name} is shy..." },
 };
 
 export function ChatPanel({
@@ -174,7 +203,8 @@ export function ChatPanel({
       };
       setMessages((prev) => [...prev, systemMsg]);
       setInput("");
-      onEmote?.(slashCmd.emote);
+      if (slashCmd.emote) onEmote?.(slashCmd.emote);
+      if (slashCmd.gesture) onAIResponse?.(slashCmd.gesture);
       return;
     }
 

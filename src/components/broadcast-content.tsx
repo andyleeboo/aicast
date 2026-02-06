@@ -141,6 +141,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onGestureComplete={handleGestureComplete}
             emote={emote}
             onEmoteComplete={handleEmoteComplete}
+            isSpeaking={isSpeaking}
           />
 
           {/* Speech bubble */}

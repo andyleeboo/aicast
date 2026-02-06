@@ -8,15 +8,13 @@ import {
   BatchedChatMessage,
 } from "@/lib/types";
 import {
+  AVATAR_ACTIONS,
   buildActionSystemPrompt,
   buildBatchSystemPrompt,
 } from "@/lib/avatar-actions";
 import { emitAction } from "@/lib/action-bus";
 
-const GESTURE_TAGS = ["NOD", "SHAKE", "TILT"] as const;
-const EMOTE_TAGS = ["WINK", "BLINK", "SLEEP"] as const;
-
-const TAG_REGEX = /^\[([A-Z]+)\]\s*/;
+const TAG_REGEX = /^\[([A-Z_]+)\]\s*/;
 
 const tagToGesture: Record<string, GestureReaction> = {
   NOD: "yes",
@@ -24,11 +22,12 @@ const tagToGesture: Record<string, GestureReaction> = {
   TILT: "uncertain",
 };
 
-const tagToEmote: Record<string, EmoteCommand> = {
-  WINK: "wink",
-  BLINK: "blink",
-  SLEEP: "sleep",
-};
+const tagToEmote: Record<string, EmoteCommand> = {};
+for (const action of AVATAR_ACTIONS) {
+  if (action.type === "emote") {
+    tagToEmote[action.tag] = action.id.split(":")[1] as EmoteCommand;
+  }
+}
 
 const PRIORITY_ORDER: Record<string, number> = {
   donation: 0,
@@ -63,10 +62,10 @@ function parseTags(raw: string) {
   const firstMatch = remaining.match(TAG_REGEX);
   if (firstMatch) {
     const tag = firstMatch[1];
-    if (GESTURE_TAGS.includes(tag as (typeof GESTURE_TAGS)[number])) {
+    if (tag in tagToGesture) {
       gesture = tagToGesture[tag];
       remaining = remaining.replace(TAG_REGEX, "");
-    } else if (EMOTE_TAGS.includes(tag as (typeof EMOTE_TAGS)[number])) {
+    } else if (tag in tagToEmote) {
       emote = tagToEmote[tag];
       remaining = remaining.replace(TAG_REGEX, "");
     }
@@ -76,13 +75,10 @@ function parseTags(raw: string) {
   const secondMatch = remaining.match(TAG_REGEX);
   if (secondMatch) {
     const tag = secondMatch[1];
-    if (!emote && EMOTE_TAGS.includes(tag as (typeof EMOTE_TAGS)[number])) {
+    if (!emote && tag in tagToEmote) {
       emote = tagToEmote[tag];
       remaining = remaining.replace(TAG_REGEX, "");
-    } else if (
-      gesture === "uncertain" &&
-      GESTURE_TAGS.includes(tag as (typeof GESTURE_TAGS)[number])
-    ) {
+    } else if (gesture === "uncertain" && tag in tagToGesture) {
       gesture = tagToGesture[tag];
       remaining = remaining.replace(TAG_REGEX, "");
     }

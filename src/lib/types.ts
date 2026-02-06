@@ -27,7 +27,58 @@ export interface ChatMessage {
 
 export type GestureReaction = "yes" | "no" | "uncertain";
 
-export type EmoteCommand = "wink" | "blink" | "sleep" | "wake";
+export type EmoteCommand =
+  // Core controls
+  | "wink" | "blink" | "sleep" | "wake"
+  // Core emotions
+  | "happy" | "sad" | "surprised" | "thinking" | "angry" | "confused"
+  | "excited" | "love" | "smug" | "crying" | "laughing" | "worried"
+  | "nervous" | "proud" | "shy" | "bored" | "tired" | "disgusted"
+  | "scared" | "determined"
+  // Happy variants
+  | "joy" | "bliss" | "grinning" | "cheerful" | "gleeful" | "delighted"
+  | "euphoric" | "content" | "radiant" | "playful"
+  // Sad variants
+  | "heartbroken" | "melancholy" | "sobbing" | "gloomy" | "depressed"
+  | "lonely" | "disappointed" | "weeping" | "moping" | "miserable"
+  // Angry variants
+  | "furious" | "irritated" | "annoyed" | "raging" | "grumpy" | "hostile"
+  | "seething" | "frustrated" | "indignant" | "cranky"
+  // Surprise variants
+  | "shocked" | "amazed" | "astonished" | "startled" | "speechless"
+  | "stunned" | "flabbergasted" | "awed" | "dumbfounded" | "bewildered"
+  // Love/affection
+  | "adoring" | "crushing" | "smitten" | "lovestruck" | "infatuated"
+  | "yearning" | "charmed" | "devoted" | "tender" | "warm"
+  // Smug/confident
+  | "sassy" | "cocky" | "superior" | "victorious" | "triumphant"
+  | "cheeky" | "mischievous" | "devious" | "brazen" | "sly"
+  // Confused/thinking
+  | "puzzled" | "pondering" | "curious" | "skeptical" | "questioning"
+  | "perplexed" | "dubious" | "uncertain" | "clueless" | "contemplating"
+  // Scared/nervous
+  | "terrified" | "anxious" | "panicked" | "spooked" | "uneasy"
+  | "dread" | "timid" | "petrified" | "jumpy" | "creepedout"
+  // Cute/kawaii
+  | "uwu" | "sparkles" | "kawaii" | "innocent" | "bubbly"
+  | "adorable" | "puppy" | "cutesy" | "dainty" | "sweet"
+  // Silly/goofy
+  | "derp" | "goofy" | "zany" | "wacky" | "silly" | "bonkers"
+  | "nutty" | "dorky" | "loopy" | "clowning"
+  // Cool/confident
+  | "cool" | "chill" | "suave" | "aloof" | "nonchalant" | "confident"
+  | "smooth" | "composed" | "unfazed" | "stoic"
+  // Tired/sleepy
+  | "drowsy" | "exhausted" | "sleepy" | "yawning" | "fatigued"
+  | "zonked" | "drained" | "lethargic" | "weary" | "dazed"
+  // Disgust/discomfort
+  | "grossed" | "repulsed" | "nauseated" | "cringing" | "uncomfortable"
+  | "appalled" | "yikes" | "eww" | "ick" | "queasy"
+  // Special/dramatic
+  | "dead" | "mindblown" | "facepalm" | "shrug" | "judging" | "plotting"
+  | "suspicious" | "pouting" | "flirty" | "daydreaming" | "zen" | "hyper"
+  | "dramatic" | "sarcastic" | "starstruck" | "grateful" | "hopeful"
+  | "nostalgic" | "peaceful" | "fierce";
 
 export type MessagePriority = "normal" | "highlight" | "donation";
 
