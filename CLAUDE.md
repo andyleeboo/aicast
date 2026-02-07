@@ -31,6 +31,7 @@ Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 - **Tailwind CSS v4** (using `@import "tailwindcss"` in globals.css, not v3 `@tailwind` directives)
 - **React Three Fiber + Three.js** for the 3D avatar
 - **Google Gemini 3** (`@google/genai`, model: `gemini-3-flash-preview`) for AI chat responses
+- **Google Gemini 2.5 TTS** (model: `gemini-2.5-pro-preview-tts`) for text-to-speech with **Web Speech API** browser fallback when server TTS fails
 - **Supabase** (`@supabase/ssr` + `@supabase/supabase-js`) for auth and database. Anonymous auth is enabled.
 - Path alias: `@/*` maps to `./src/*`
 
@@ -41,15 +42,19 @@ Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 - `/` — Landing page with hero CTA linking to the single live channel
 - `/live/[id]` — Stream viewer page: 3D avatar + chat panel side by side
 
-### Data Flow: Chat → Avatar Animation
+### Data Flow: Chat → Avatar Animation → Speech
 
-1. User types in `ChatPanel` → POST to `/api/chat` with message + history
-2. Server appends `buildActionSystemPrompt()` to the streamer's personality, calls Gemini
+1. User types in `ChatPanel` → POST to `/api/chat` with message + batch queue
+2. Server batches messages for ~3s, then appends `buildActionSystemPrompt()` to the streamer's personality, calls Gemini 3 Flash
 3. Gemini response starts with `[GESTURE_TAG] [EMOTE_TAG] text...` — server parses and strips tags
-4. Response returns `{ response, gesture, emote }` to client
-5. `BroadcastContent` (client orchestrator) receives gesture/emote, passes to `AvatarCanvas` → `HeadScene` → `FaceController`
+4. Server broadcasts `ai-response` event via SSE (action-bus → `/api/avatar/events`)
+5. Server streams TTS audio via the provider chain (Gemini 2.5 Pro TTS → Flash TTS fallback)
+6. `BroadcastContent` (client orchestrator) receives events, triggers avatar animation + speech bubble + audio playback
+7. If no server audio arrives, client falls back to browser Web Speech API
 
-Chat uses a **batch system**: messages are collected for ~3 seconds client-side, then sent as a single batch to the API. The AI sees "who said what" and responds like a real streamer scanning chat. Users pick a display name before chatting.
+**Bob is speech-only** — his responses appear as voice audio + speech bubble overlay on the 3D avatar. Bob does NOT appear in the chat panel. The chat panel shows only viewer messages. Supabase only persists user messages (no assistant messages).
+
+Chat uses a **batch system**: messages are collected for ~3 seconds server-side, then sent as a single batch to Gemini. The AI sees "who said what" and responds like a real streamer scanning chat. Users pick a display name before chatting.
 
 ### 3D Avatar System (`src/components/avatar/`)
 
@@ -67,6 +72,19 @@ The avatar uses a **state machine animation controller** (`FaceController`):
 - Actions are defined in `src/lib/avatar-actions.ts` with gesture tags (NOD, SHAKE, TILT) and emote tags (WINK, BLINK, SLEEP, WAKE)
 - `buildActionSystemPrompt()` generates the system prompt suffix instructing Gemini to use these tags
 - **Remote control**: REST API at `/api/avatar/actions` (GET lists actions, POST triggers one) → emits through `action-bus.ts` (in-memory pub/sub) → SSE stream at `/api/avatar/events` → client `EventSource` in `BroadcastContent`
+
+### TTS System (`src/lib/gemini-live.ts`)
+
+Uses a **provider chain** pattern — tries each TTS provider in order until one delivers audio:
+
+1. `gemini-2.5-pro-preview-tts` (primary — higher quality, ~5s latency)
+2. `gemini-2.5-flash-preview-tts` (fallback — lower latency but may share quota)
+
+If all server providers fail (quota exhaustion, timeout), the client automatically falls back to the **Web Speech API** (`window.speechSynthesis`) in `broadcast-content.tsx`. This is zero-cost and always available.
+
+The `TtsProvider` interface in `gemini-live.ts` makes it easy to add new providers (e.g., Google Cloud TTS, ElevenLabs) — just implement `generateSpeech(text, onChunk)` and add to the `providers` array.
+
+Audio format: 24 kHz mono 16-bit PCM (base64-encoded), streamed as SSE events (`ai-audio-chunk`) to the client's `useAudioPlayer` hook.
 
 ### Supabase Client (`src/utils/supabase/`)
 
@@ -127,5 +145,6 @@ git branch -d <branch-name>
 
 ## Rules
 
-- **Always use Gemini 3 models** — this project is for the Gemini 3 Hackathon. The model in `src/lib/gemini.ts` must be a `gemini-3-*` model (currently `gemini-3-flash-preview`). Never downgrade to Gemini 2.x or any other model family.
+- **Always use Gemini 3 for chat/reasoning** — this project is for the Gemini 3 Hackathon. The chat model in `src/lib/gemini.ts` must be a `gemini-3-*` model (currently `gemini-3-flash-preview`). **Exception**: TTS uses Gemini 2.5 models because Gemini 3 does not support audio output. The TTS provider chain in `src/lib/gemini-live.ts` uses `gemini-2.5-pro-preview-tts` (primary) and `gemini-2.5-flash-preview-tts` (fallback).
+- **Bob is speech-only** — Bob communicates via voice + speech bubble on the 3D avatar. Bob's messages do NOT appear in the chat panel. Do not add assistant message persistence to Supabase or re-add AI messages to the chat UI.
 - Streamer character is **Bob** — do not rename without explicit instruction

@@ -1,14 +1,29 @@
 /**
- * Text-to-speech via Gemini REST API (generateContent).
+ * TTS provider abstraction — swap models/APIs by changing the provider list.
  *
- * Uses a single HTTP request instead of a WebSocket session, making it
- * compatible with serverless environments like Vercel where long-lived
- * connections are killed.
+ * Current providers (tried in order):
+ *  1. Gemini 2.5 Pro TTS  (highest quality, separate quota from Flash)
+ *  2. Gemini 2.5 Flash TTS (lower latency, may share quota)
  *
  * Audio format: 24 kHz mono 16-bit PCM (base64-encoded), matching
  * what the client audio player expects.
+ *
+ * If ALL server providers fail, the client falls back to the browser
+ * Web Speech API (see broadcast-content.tsx).
  */
 import { GoogleGenAI, Modality } from "@google/genai";
+
+// ── Types ────────────────────────────────────────────────────────────
+
+export interface TtsProvider {
+  name: string;
+  generateSpeech(
+    text: string,
+    onChunk: (base64Audio: string) => void,
+  ): Promise<boolean>; // true = audio delivered, false = failed
+}
+
+// ── Gemini TTS Provider ──────────────────────────────────────────────
 
 let ai: GoogleGenAI | undefined;
 
@@ -19,86 +34,93 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
-/** Max time to wait for TTS response before giving up. */
-const TTS_TIMEOUT_MS = 15_000;
+const TTS_TIMEOUT_MS = 25_000;
+const VOICE_NAME = "Puck";
 
-/** Cap input text to avoid huge TTS requests that timeout or cost too much. */
+function createGeminiTtsProvider(model: string): TtsProvider {
+  return {
+    name: `gemini(${model})`,
+    async generateSpeech(text, onChunk) {
+      const result = await Promise.race([
+        getClient().models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: VOICE_NAME },
+              },
+            },
+          },
+        }),
+        new Promise<null>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`TTS timed out (${model})`)),
+            TTS_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
+      if (!result) return false;
+
+      let hasAudio = false;
+      for (const candidate of result.candidates ?? []) {
+        for (const part of candidate.content?.parts ?? []) {
+          const audioData = part.inlineData?.data;
+          if (audioData) {
+            hasAudio = true;
+            onChunk(audioData);
+          }
+        }
+      }
+      return hasAudio;
+    },
+  };
+}
+
+// ── Provider chain (tried in order) ──────────────────────────────────
+
+const providers: TtsProvider[] = [
+  createGeminiTtsProvider("gemini-2.5-pro-preview-tts"),
+];
+
+// ── Public API (unchanged signature) ─────────────────────────────────
+
 const MAX_TTS_CHARS = 1000;
 
 /**
- * Generate speech audio for the given text via the Gemini REST API.
- *
- * Calls generateContent with AUDIO modality and delivers audio chunks
- * through the onAudioChunk callback. Resolves when all audio is delivered.
- *
- * @param text – Plain text to speak (no tags)
- * @param onAudioChunk – Called with each base64 PCM audio chunk
+ * Generate speech audio via the TTS provider chain.
+ * Tries each provider in order; stops at the first that delivers audio.
+ * If all providers fail, resolves quietly — client will use Web Speech fallback.
  */
 export async function streamSpeech(
   text: string,
   onAudioChunk?: (base64Audio: string) => void,
 ): Promise<string | null> {
-  // Cap input length to prevent overly long TTS requests
   const input =
     text.length > MAX_TTS_CHARS
       ? text.slice(0, MAX_TTS_CHARS) + "..."
       : text;
 
-  try {
-    console.log(
-      `[gemini-tts] Generating speech (${input.length} chars) via REST API`,
-    );
-
-    // Race the TTS call against a timeout
-    const result = await Promise.race([
-      getClient().models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ role: "user", parts: [{ text: input }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: "Puck",
-              },
-            },
-          },
-        },
-      }),
-      new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("TTS timed out after 15s")), TTS_TIMEOUT_MS),
-      ),
-    ]);
-
-    if (!result) return null;
-
-    // Extract audio data from the response
-    const candidates = result.candidates;
-    if (!candidates?.length) {
-      console.warn("[gemini-tts] No candidates in response");
-      return null;
-    }
-
-    let hasAudio = false;
-    for (const candidate of candidates) {
-      const parts = candidate.content?.parts;
-      if (!parts) continue;
-      for (const part of parts) {
-        const audioData = part.inlineData?.data;
-        if (audioData) {
-          hasAudio = true;
-          onAudioChunk?.(audioData);
-        }
+  for (const provider of providers) {
+    try {
+      console.log(
+        `[tts] Trying ${provider.name} (${input.length} chars)`,
+      );
+      const ok = await provider.generateSpeech(input, (chunk) =>
+        onAudioChunk?.(chunk),
+      );
+      if (ok) {
+        console.log(`[tts] ${provider.name} delivered audio`);
+        return null;
       }
+      console.warn(`[tts] ${provider.name} returned no audio, trying next`);
+    } catch (err) {
+      console.warn(`[tts] ${provider.name} failed:`, err instanceof Error ? err.message : err);
     }
-
-    if (!hasAudio) {
-      console.warn("[gemini-tts] Response contained no audio data");
-    }
-
-    return null;
-  } catch (err) {
-    console.error("[gemini-tts] streamSpeech error:", err);
-    return null;
   }
+
+  console.warn("[tts] All providers failed — client will use Web Speech fallback");
+  return null;
 }

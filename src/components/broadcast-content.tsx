@@ -37,6 +37,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSpeechText = useRef<string | null>(null);
+  const currentResponseText = useRef<string | null>(null); // kept for browser fallback after flush
+  const gotServerAudio = useRef(false);
   const pendingActions = useRef<{
     gesture?: GestureReaction;
     emote?: EmoteCommand;
@@ -135,6 +137,23 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }, skill.holdMs);
   }, [handleEmote]);
 
+  // Web Speech API fallback — speaks text via the browser when server TTS fails
+  const speakWithBrowser = useCallback((text: string) => {
+    if (mutedRef.current) return;
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel(); // stop any prior utterance
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.05;
+    utter.pitch = 1.0;
+    utter.onstart = () => setIsSpeaking(true);
+    utter.onend = () => {
+      setIsSpeaking(false);
+      setSpeechBubble(null);
+    };
+    utter.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utter);
+  }, []);
+
   // Flush all stashed response data (bubble, gesture, emote)
   // Called when first audio chunk arrives, or as fallback when TTS fails
   const flushPending = useCallback(() => {
@@ -159,6 +178,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       if (mutedRef.current) return;
       if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
       if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
+      window.speechSynthesis?.cancel(); // kill browser fallback if racing
+      gotServerAudio.current = true;
       flushPending();
       setIsSpeaking(true);
       trackEvent("audio_playback_started");
@@ -172,6 +193,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       if (mutedRef.current) return;
       if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
       if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
+      window.speechSynthesis?.cancel(); // kill browser fallback if racing
+      gotServerAudio.current = true;
       flushPending();
       setIsSpeaking(true);
       player.enqueue(data);
@@ -181,14 +204,19 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   const handleAudioEnd = useCallback(() => {
     if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
-    // If no audio arrived (TTS failure), flush as fallback with auto-dismiss
-    if (pendingSpeechText.current || pendingActions.current) {
-      flushPending();
-      if (speechTimeout.current) clearTimeout(speechTimeout.current);
-      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+    // Flush any remaining stashed data
+    flushPending();
+
+    if (!gotServerAudio.current && currentResponseText.current) {
+      // No server audio arrived at all — use browser speech as fallback
+      setSpeechBubble(currentResponseText.current);
+      speakWithBrowser(currentResponseText.current);
     }
+    // If server audio played, bubble stays until player.onEnd fires
+    gotServerAudio.current = false;
+    currentResponseText.current = null;
     player.markStreamEnd();
-  }, [player, flushPending]);
+  }, [player, flushPending, speakWithBrowser]);
 
   function handleUsernameConfirm(name: string) {
     localStorage.setItem(USERNAME_KEY, name);
@@ -211,6 +239,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
         if (data.type === "ai-response") {
           trackEvent("ai_response_received");
+          gotServerAudio.current = false;
           // Stash everything — flushed when audio starts playing
           const actions: typeof pendingActions.current = {
             gesture: data.gesture as GestureReaction | undefined,
@@ -218,11 +247,13 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             skillId: data.skillId as string | undefined,
           };
 
+          currentResponseText.current = data.response ?? null;
+
           if (mutedRef.current) {
             // Muted: no audio will arrive, flush immediately
             if (data.response) setSpeechBubble(data.response);
             if (speechTimeout.current) clearTimeout(speechTimeout.current);
-            speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+            speechTimeout.current = setTimeout(() => setSpeechBubble(null), 8000);
             if (data.skillId) {
               activateSkill(data.skillId);
             } else {
@@ -230,18 +261,30 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
               if (data.emote) handleEmote(data.emote as EmoteCommand);
             }
           } else {
-            // Stash — audio handlers will flush when first chunk arrives
+            // Show "..." loading bubble immediately
+            setSpeechBubble("...");
+            // Stash real text + actions — flushed when first audio chunk arrives
             pendingSpeechText.current = data.response ?? null;
             pendingActions.current = actions;
-            // Safeguard: if no audio chunk arrives within 8s, flush anyway
+            // Safeguard: if no audio arrives within 20s, flush actions (but no browser speech here)
             if (pendingFlushTimeout.current) clearTimeout(pendingFlushTimeout.current);
             pendingFlushTimeout.current = setTimeout(() => {
-              if (pendingSpeechText.current || pendingActions.current) {
-                flushPending();
-                if (speechTimeout.current) clearTimeout(speechTimeout.current);
-                speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+              if (pendingActions.current) {
+                const a = pendingActions.current;
+                pendingActions.current = null;
+                if (a.skillId) {
+                  activateSkill(a.skillId);
+                } else {
+                  if (a.gesture) setGesture(a.gesture);
+                  if (a.emote) handleEmote(a.emote);
+                }
               }
-            }, 8_000);
+              // Show real text in bubble if still waiting
+              if (pendingSpeechText.current) {
+                setSpeechBubble(pendingSpeechText.current);
+                pendingSpeechText.current = null;
+              }
+            }, 20_000);
           }
           return;
         }
@@ -279,7 +322,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
 
     return () => es.close();
-  }, [handleEmote, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill]);
+  }, [handleEmote, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill, flushPending, speakWithBrowser]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -309,7 +352,15 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           >
             {speechBubble && (
               <div className="relative rounded-2xl bg-white px-5 py-3 text-sm leading-relaxed text-gray-900 shadow-lg">
-                {speechBubble}
+                {speechBubble === "..." ? (
+                  <span className="inline-flex gap-0.5">
+                    <span className="animate-bounce [animation-delay:0ms]">.</span>
+                    <span className="animate-bounce [animation-delay:150ms]">.</span>
+                    <span className="animate-bounce [animation-delay:300ms]">.</span>
+                  </span>
+                ) : (
+                  speechBubble
+                )}
                 {/* Bubble tail / triangle */}
                 <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
                   <div className="h-0 w-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white" />
@@ -335,6 +386,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
               trackEvent("mute_toggled", { muted: next });
               if (!next) return;
               player.stop();
+              window.speechSynthesis?.cancel();
             }}
             className="shrink-0 rounded-full bg-surface-hover px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
             title={muted ? "Unmute" : "Mute"}
