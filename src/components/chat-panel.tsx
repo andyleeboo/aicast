@@ -248,8 +248,8 @@ export function ChatPanel({
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
         <div className="space-y-2">
           {messages.map((msg) => (
-            <div key={msg.id} className="group text-sm leading-relaxed">
-              <span className="mr-1 text-[10px] text-muted/50 opacity-0 transition-opacity group-hover:opacity-100">
+            <div key={msg.id} className="group relative text-sm leading-relaxed">
+              <span className="pointer-events-none absolute right-full mr-1 text-[10px] text-muted/50 opacity-0 transition-opacity group-hover:opacity-100">
                 {formatTime(msg.timestamp)}
               </span>
               {msg.role === "system" ? (
