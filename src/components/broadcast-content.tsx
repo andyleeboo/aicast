@@ -25,6 +25,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // undefined = not loaded yet, null = no username stored
   const [username, setUsername] = useState<string | null | undefined>(undefined);
@@ -48,11 +49,15 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const lockedUntil = useRef(0);
   const pendingEmote = useRef<EmoteCommand | null>(null);
   const mutedRef = useRef(muted);
+  const maintenanceModeRef = useRef(maintenanceMode);
 
-  // Keep mutedRef in sync so the audio callback sees the latest value
+  // Keep refs in sync so callbacks see the latest values
   useEffect(() => {
     mutedRef.current = muted;
   }, [muted]);
+  useEffect(() => {
+    maintenanceModeRef.current = maintenanceMode;
+  }, [maintenanceMode]);
 
   const player = useAudioPlayer({
     onEnd: () => {
@@ -139,18 +144,20 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   // Web Speech API fallback — speaks text via the browser when server TTS fails
   const speakWithBrowser = useCallback((text: string) => {
-    if (mutedRef.current) return;
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    if (mutedRef.current) { console.log("[web-speech] Skipped — muted"); return; }
+    if (typeof window === "undefined" || !window.speechSynthesis) { console.log("[web-speech] Skipped — speechSynthesis unavailable"); return; }
+    console.log("[web-speech] Speaking:", text.substring(0, 60) + "...");
     window.speechSynthesis.cancel(); // stop any prior utterance
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 1.05;
     utter.pitch = 1.0;
-    utter.onstart = () => setIsSpeaking(true);
+    utter.onstart = () => { console.log("[web-speech] Started"); setIsSpeaking(true); };
     utter.onend = () => {
+      console.log("[web-speech] Ended");
       setIsSpeaking(false);
       setSpeechBubble(null);
     };
-    utter.onerror = () => setIsSpeaking(false);
+    utter.onerror = (e) => { console.error("[web-speech] Error:", e.error); setIsSpeaking(false); };
     window.speechSynthesis.speak(utter);
   }, []);
 
@@ -190,6 +197,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   const handleAudioChunk = useCallback(
     (data: string) => {
+      console.log("[audio] Chunk received, muted:", mutedRef.current, "size:", data.length);
       if (mutedRef.current) return;
       if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
       if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
@@ -203,12 +211,14 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   );
 
   const handleAudioEnd = useCallback(() => {
+    console.log("[audio] Stream end signal, gotServerAudio:", gotServerAudio.current, "pendingText:", !!currentResponseText.current);
     if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
     // Flush any remaining stashed data
     flushPending();
 
     if (!gotServerAudio.current && currentResponseText.current) {
       // No server audio arrived at all — use browser speech as fallback
+      console.log("[audio] No server audio — falling back to Web Speech API");
       setSpeechBubble(currentResponseText.current);
       speakWithBrowser(currentResponseText.current);
     }
@@ -227,15 +237,35 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   // Subscribe to SSE for remote-triggered actions and AI responses
   // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {
+    console.log("[sse] Connecting to /api/avatar/events");
     const es = new EventSource("/api/avatar/events");
 
-    es.onopen = () => setSseConnected(true);
-    es.onerror = () => setSseConnected(false);
+    es.onopen = () => { console.log("[sse] Connected"); setSseConnected(true); };
+    es.onerror = (e) => { console.warn("[sse] Error/disconnected, readyState:", es.readyState, e); setSseConnected(false); };
 
     es.onmessage = (event) => {
       setSseConnected(true);
       try {
         const data = JSON.parse(event.data);
+
+        console.log("[sse] Event:", data.type, data.type === "ai-audio-chunk" ? `(${(data.audioData?.length ?? 0)} chars)` : "");
+
+        if (data.type === "maintenance-mode") {
+          if (data.active && !maintenanceModeRef.current) {
+            setSpeechBubble("System Maintenance");
+            handleEmote("sleep");
+            setMaintenanceMode(true);
+          } else if (!data.active && maintenanceModeRef.current) {
+            setSpeechBubble(null);
+            handleEmote("wake");
+            setMaintenanceMode(false);
+          }
+          return;
+        }
+
+        if (maintenanceModeRef.current && data.type === "ai-response") {
+          return; // Ignore stale AI responses during maintenance
+        }
 
         if (data.type === "ai-response") {
           trackEvent("ai_response_received");

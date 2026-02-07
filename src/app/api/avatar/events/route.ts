@@ -1,6 +1,7 @@
 import { subscribe, touchViewer, removeViewer, type ActionEvent } from "@/lib/action-bus";
 import "@/lib/idle-behavior"; // Start Bob's idle expressions
 import "@/lib/proactive-speech"; // Start Bob's proactive monologues
+import { isShutdown } from "@/lib/service-config";
 
 export const dynamic = "force-dynamic";
 
@@ -26,16 +27,39 @@ export async function GET() {
       // Send initial keepalive
       controller.enqueue(encoder.encode(": connected\n\n"));
 
+      // Send maintenance status on connect
+      isShutdown().then((shutdown) => {
+        if (shutdown) {
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "maintenance-mode", id: "system", active: true })}\n\n`,
+              ),
+            );
+          } catch {
+            cleanup();
+          }
+        }
+      });
+
       // Register this viewer
       touchViewer(viewerId);
 
       unsubscribe = subscribe(send);
 
       // Keepalive every 30s to prevent timeout + refresh viewer timestamp
-      keepalive = setInterval(() => {
+      keepalive = setInterval(async () => {
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
           touchViewer(viewerId);
+
+          // Check and broadcast maintenance status on each keepalive
+          const shutdown = await isShutdown();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "maintenance-mode", id: "system", active: shutdown })}\n\n`,
+            ),
+          );
         } catch {
           cleanup();
         }

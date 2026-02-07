@@ -36,11 +36,28 @@ export async function chat(
 
   // Extract only the first text part — later parts may carry thoughtSignature
   // artifacts that cause duplicated/repeated text when concatenated
-  const parts = response.candidates?.[0]?.content?.parts;
-  const firstTextPart = parts?.find((p) => p.text)?.text ?? "";
-  console.log("[chat] Gemini response:", JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length }));
+  let parts = response.candidates?.[0]?.content?.parts;
+  let firstTextPart = parts?.find((p) => p.text)?.text ?? "";
+  console.log("[chat] Gemini response:", JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length, finishReason: response.candidates?.[0]?.finishReason }));
+
+  // Retry once on empty response — Gemini 3 Flash occasionally returns no text
   if (!firstTextPart) {
-    throw new Error("Empty response from Gemini");
+    console.warn("[chat] Empty response from Gemini — retrying once");
+    const retry = await getClient().models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents,
+      config: {
+        systemInstruction: systemPrompt,
+        maxOutputTokens: 8192,
+        temperature: 0.9,
+      },
+    });
+    parts = retry.candidates?.[0]?.content?.parts;
+    firstTextPart = parts?.find((p) => p.text)?.text ?? "";
+    console.log("[chat] Retry response:", JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length, finishReason: retry.candidates?.[0]?.finishReason }));
+    if (!firstTextPart) {
+      throw new Error("Empty response from Gemini after retry");
+    }
   }
   // Cap response length to prevent runaway output from reaching clients
   const MAX_RESPONSE_CHARS = 1500;

@@ -20,6 +20,7 @@ import {
 } from "@/lib/chat-queue";
 import { parseTags } from "@/lib/chat-queue-init";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
+import { isShutdown } from "@/lib/service-config";
 import type { ChatMessage } from "@/lib/types";
 
 const MIN_SILENCE_MS = 45_000;
@@ -50,6 +51,8 @@ function randomDelay(): number {
 }
 
 async function maybeSpeakProactively() {
+  if (await isShutdown()) return;
+
   const now = Date.now();
   const state = getState();
 

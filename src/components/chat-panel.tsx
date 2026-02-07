@@ -117,6 +117,7 @@ export function ChatPanel({
           filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
+          console.log("[realtime] INSERT received:", payload.new);
           const row = payload.new as MessageRow;
           if (row.role !== "user") return; // Only show viewer messages
           const msg = dbRowToChatMessage(row);
@@ -138,7 +139,9 @@ export function ChatPanel({
           });
         },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log("[realtime] Subscription status:", status, err ?? "");
+      });
 
     return () => {
       mounted = false;
