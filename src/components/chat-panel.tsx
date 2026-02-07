@@ -77,13 +77,40 @@ export function ChatPanel({
     });
   }, [messages]);
 
-  // Load initial messages + subscribe to Realtime
+  // Load initial messages, subscribe to Realtime, and poll as fallback
   useEffect(() => {
     let mounted = true;
     const sb = getSupabase();
     if (!sb) return;
-    // Assign to const so TS narrows to non-null inside closures
     const supabase = sb;
+
+    // Merge new rows into state, deduplicating by ID and optimistic matches
+    function mergeMessages(incoming: MessageRow[]) {
+      const newMsgs = incoming
+        .filter((r) => r.role === "user")
+        .map(dbRowToChatMessage);
+      if (newMsgs.length === 0) return;
+
+      setMessages((prev) => {
+        let updated = prev;
+        for (const msg of newMsgs) {
+          if (updated.some((m) => m.id === msg.id)) continue;
+          // Skip optimistic duplicates
+          if (
+            updated.some(
+              (m) =>
+                m.role === msg.role &&
+                m.content === msg.content &&
+                m.username === msg.username &&
+                Math.abs(m.timestamp - msg.timestamp) < 30_000,
+            )
+          )
+            continue;
+          updated = [...updated, msg];
+        }
+        return updated;
+      });
+    }
 
     // Load last 50 messages from the past 3 hours
     async function loadMessages() {
@@ -98,14 +125,13 @@ export function ChatPanel({
         .limit(50);
 
       if (mounted && data) {
-        // Reverse so oldest is first (we fetched newest-first to get the last 50)
         setMessages(data.reverse().map(dbRowToChatMessage));
       }
     }
 
     loadMessages();
 
-    // Subscribe to new messages via Realtime
+    // Realtime subscription (may not work with publishable keys)
     const channel = supabase
       .channel(`messages:${channelId}`)
       .on(
@@ -118,33 +144,33 @@ export function ChatPanel({
         },
         (payload) => {
           console.log("[realtime] INSERT received:", payload.new);
-          const row = payload.new as MessageRow;
-          if (row.role !== "user") return; // Only show viewer messages
-          const msg = dbRowToChatMessage(row);
-          setMessages((prev) => {
-            // Skip if we already have this message by ID
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            // Skip if we have an optimistic duplicate (same role+content+username within 30s)
-            if (
-              prev.some(
-                (m) =>
-                  m.role === msg.role &&
-                  m.content === msg.content &&
-                  m.username === msg.username &&
-                  Math.abs(m.timestamp - msg.timestamp) < 30_000,
-              )
-            )
-              return prev;
-            return [...prev, msg];
-          });
+          mergeMessages([payload.new as MessageRow]);
         },
       )
       .subscribe((status, err) => {
         console.log("[realtime] Subscription status:", status, err ?? "");
       });
 
+    // Polling fallback — guarantees cross-device sync every 5s
+    const poll = setInterval(async () => {
+      const fiveSecondsAgo = new Date(Date.now() - 6_000).toISOString();
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("channel_id", channelId)
+        .eq("role", "user")
+        .gte("created_at", fiveSecondsAgo)
+        .order("created_at", { ascending: true })
+        .limit(20);
+
+      if (mounted && data && data.length > 0) {
+        mergeMessages(data);
+      }
+    }, 5_000);
+
     return () => {
       mounted = false;
+      clearInterval(poll);
       supabase.removeChannel(channel);
     };
   }, [channelId]);
