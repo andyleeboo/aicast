@@ -20,7 +20,7 @@ Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 
 - `GEMINI_API_KEY` — Google AI Studio API key (required for AI chat; without it, the Gemini client lazy-inits with an empty key)
 - `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL (e.g. `https://<ref>.supabase.co`)
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` — Supabase publishable key (format: `sb_publishable_...`). **Not** the legacy `anon` JWT — Supabase now uses publishable keys.
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — Supabase publishable key (format: `sb_publishable_...`). **Not** the legacy `anon` JWT — Supabase now uses publishable keys.
 - `SENTRY_DSN` — Sentry Data Source Name for server/edge error tracking
 - `NEXT_PUBLIC_SENTRY_DSN` — Sentry DSN for browser error tracking (same value as `SENTRY_DSN`)
 - `SENTRY_AUTH_TOKEN` — Sentry auth token for source map uploads (only needed in CI/production builds)
