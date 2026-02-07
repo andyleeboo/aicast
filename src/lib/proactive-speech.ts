@@ -3,7 +3,8 @@
  * Import this module to auto-start the proactive speech loop.
  */
 import { getListenerCount, emitAction } from "@/lib/action-bus";
-import { chat, textToSpeech } from "@/lib/gemini";
+import { chat } from "@/lib/gemini";
+import { speakWithVoice } from "@/lib/gemini-live";
 import { getChannelFromDB } from "@/lib/mock-data";
 import {
   buildProactiveSystemPrompt,
@@ -94,24 +95,6 @@ async function maybeSpeakProactively() {
       }) +
       buildActionSystemPrompt();
 
-    let raw: string;
-    try {
-      raw = await chat(messages, systemPrompt);
-    } catch (err) {
-      console.error("[proactive-speech] Gemini API error:", err);
-      return;
-    }
-
-    const { response, gesture, emote, skillId, language } = parseTags(raw);
-
-    // Save to rolling history
-    pushHistory({
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: response,
-      timestamp: Date.now(),
-    });
-
     // Update activity so we don't immediately trigger again
     touchActivity();
 
@@ -120,29 +103,69 @@ async function maybeSpeakProactively() {
     // Pause idle animations while Bob is speaking
     pauseIdle();
 
-    // Broadcast text + gesture
-    emitAction({
-      type: "ai-response",
-      id: responseId,
-      response,
-      gesture,
-      emote,
-      skillId,
-    });
+    let response: string;
+    try {
+      const { transcript } = await speakWithVoice(
+        systemPrompt,
+        messages,
+        (chunk) => {
+          emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
+        },
+      );
+      emitAction({ type: "ai-audio-end", id: responseId });
 
-    // TTS in background
-    textToSpeech(response, undefined, language)
-      .then((audioData) => {
-        if (audioData) {
-          emitAction({ type: "ai-audio", id: responseId, audioData });
-        }
-      })
-      .catch((err) => {
-        console.error("[proactive-speech] TTS error:", err);
-      })
-      .finally(() => {
-        resumeIdle();
+      const parsed = parseTags(transcript || "");
+      response = parsed.response;
+
+      // Save to rolling history
+      pushHistory({
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: response,
+        timestamp: Date.now(),
       });
+
+      // Broadcast text + gesture
+      emitAction({
+        type: "ai-response",
+        id: responseId,
+        response,
+        gesture: parsed.gesture,
+        emote: parsed.emote,
+        skillId: parsed.skillId,
+      });
+    } catch (err) {
+      console.error("[proactive-speech] Live API error, falling back to chat():", err);
+
+      // Fallback: text-only
+      try {
+        const raw = await chat(messages, systemPrompt);
+        const parsed = parseTags(raw);
+        response = parsed.response;
+
+        pushHistory({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: response,
+          timestamp: Date.now(),
+        });
+
+        emitAction({
+          type: "ai-response",
+          id: responseId,
+          response,
+          gesture: parsed.gesture,
+          emote: parsed.emote,
+          skillId: parsed.skillId,
+        });
+      } catch (fallbackErr) {
+        console.error("[proactive-speech] Fallback chat() also failed:", fallbackErr);
+        resumeIdle();
+        return;
+      }
+    } finally {
+      resumeIdle();
+    }
 
     // Persist to Supabase (fire-and-forget)
     const supabase = createServerSupabaseClient();

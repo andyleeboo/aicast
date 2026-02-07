@@ -1,5 +1,5 @@
 export interface ActionEvent {
-  type: "gesture" | "emote" | "skill" | "ai-response" | "ai-thinking" | "ai-audio";
+  type: "gesture" | "emote" | "skill" | "ai-response" | "ai-thinking" | "ai-audio" | "ai-audio-chunk" | "ai-audio-end";
   id: string; // e.g. "gesture:yes", "emote:wink", "skill:dramatic-zoom", or unique response id
   response?: string;
   audioData?: string | null;

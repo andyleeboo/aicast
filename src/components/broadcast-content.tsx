@@ -108,6 +108,32 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     [player],
   );
 
+  const handleAudioChunk = useCallback(
+    (data: string) => {
+      if (mutedRef.current) return;
+
+      // Clear the fallback timeout — streaming audio is arriving
+      if (speechTimeout.current) {
+        clearTimeout(speechTimeout.current);
+        speechTimeout.current = null;
+      }
+
+      // Show the speech bubble on first chunk
+      if (pendingSpeechText.current) {
+        setSpeechBubble(pendingSpeechText.current);
+        pendingSpeechText.current = null;
+      }
+
+      setIsSpeaking(true);
+      player.enqueue(data);
+    },
+    [player],
+  );
+
+  const handleAudioEnd = useCallback(() => {
+    player.markStreamEnd();
+  }, [player]);
+
   const fireEmote = useCallback((cmd: EmoteCommand) => {
     emoteCounter.current += 1;
     setEmote({ command: cmd, key: emoteCounter.current });
@@ -222,6 +248,16 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           return;
         }
 
+        if (data.type === "ai-audio-chunk") {
+          if (data.audioData) handleAudioChunk(data.audioData);
+          return;
+        }
+
+        if (data.type === "ai-audio-end") {
+          handleAudioEnd();
+          return;
+        }
+
         if (data.type === "skill") {
           const skillId = data.id;
           activateSkill(skillId);
@@ -240,7 +276,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
 
     return () => es.close();
-  }, [handleEmote, handleSpeechBubble, handleAudioData, activateSkill]);
+  }, [handleEmote, handleSpeechBubble, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

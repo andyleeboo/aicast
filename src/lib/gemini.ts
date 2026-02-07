@@ -10,44 +10,6 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
-export async function textToSpeech(
-  text: string,
-  voiceName = "Puck",
-  language?: string,
-): Promise<string | null> {
-  const langHint = language ? `, speaking in ${language}` : "";
-  try {
-    const response = await getClient().models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Say in a playful, energetic, slightly robotic digital voice${langHint}: ${text}`,
-            },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName },
-          },
-        },
-      },
-    });
-
-    const data =
-      response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    return data ?? null;
-  } catch (err) {
-    console.error("[tts] Gemini TTS error:", err);
-    return null;
-  }
-}
-
 export async function chat(
   messages: ChatMessage[],
   systemPrompt: string,
