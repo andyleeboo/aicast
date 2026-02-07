@@ -33,12 +33,13 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
+  // undefined = not loaded yet, null = no username stored
+  const [username, setUsername] = useState<string | null | undefined>(undefined);
 
   // Hydrate from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
     const stored = localStorage.getItem(USERNAME_KEY);
-    if (stored) setUsername(stored);
+    setUsername(stored); // null if not found, string if found
   }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSpeechText = useRef<string | null>(null);
@@ -282,8 +283,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-      {/* Username modal */}
-      {!username && <UsernameModal onConfirm={handleUsernameConfirm} />}
+      {/* Username modal — only after localStorage has been checked */}
+      {username === null && <UsernameModal onConfirm={handleUsernameConfirm} />}
 
       {/* Stream area — fixed height on mobile so keyboard only shrinks chat */}
       <div className="flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:flex-1 lg:shrink">
