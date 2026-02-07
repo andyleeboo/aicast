@@ -19,6 +19,12 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
+/** Max time to wait for TTS response before giving up. */
+const TTS_TIMEOUT_MS = 15_000;
+
+/** Cap input text to avoid huge TTS requests that timeout or cost too much. */
+const MAX_TTS_CHARS = 1000;
+
 /**
  * Generate speech audio for the given text via the Gemini REST API.
  *
@@ -32,26 +38,40 @@ export async function streamSpeech(
   text: string,
   onAudioChunk?: (base64Audio: string) => void,
 ): Promise<string | null> {
+  // Cap input length to prevent overly long TTS requests
+  const input =
+    text.length > MAX_TTS_CHARS
+      ? text.slice(0, MAX_TTS_CHARS) + "..."
+      : text;
+
   try {
     console.log(
-      `[gemini-tts] Generating speech (${text.length} chars) via REST API`,
+      `[gemini-tts] Generating speech (${input.length} chars) via REST API`,
     );
 
-    const response = await getClient().models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ role: "user", parts: [{ text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: "Puck" },
+    // Race the TTS call against a timeout
+    const result = await Promise.race([
+      getClient().models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ role: "user", parts: [{ text: input }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: "Puck" },
+            },
           },
         },
-      },
-    });
+      }),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("TTS timed out after 15s")), TTS_TIMEOUT_MS),
+      ),
+    ]);
+
+    if (!result) return null;
 
     // Extract audio data from the response
-    const candidates = response.candidates;
+    const candidates = result.candidates;
     if (!candidates?.length) {
       console.warn("[gemini-tts] No candidates in response");
       return null;
@@ -74,7 +94,6 @@ export async function streamSpeech(
       console.warn("[gemini-tts] Response contained no audio data");
     }
 
-    // REST TTS doesn't provide a transcript — return null
     return null;
   } catch (err) {
     console.error("[gemini-tts] streamSpeech error:", err);

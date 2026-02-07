@@ -171,6 +171,8 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     raw = await chat(messages, systemPrompt);
   } catch (err) {
     console.error("[chat-queue-init] Gemini API error:", err);
+    // Clear "thinking" on the client so it doesn't hang
+    emitAction({ type: "ai-audio-end", id: responseId });
     return;
   }
 
@@ -179,6 +181,7 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
   // Skip empty responses (Gemini sometimes returns only tags or whitespace)
   if (!response) {
     console.warn("[chat-queue-init] Empty response after parsing, skipping");
+    emitAction({ type: "ai-audio-end", id: responseId });
     return;
   }
 

@@ -43,6 +43,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setUsername(stored); // null if not found, string if found
   }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const thinkingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSpeechText = useRef<string | null>(null);
   const pendingActions = useRef<{
     gesture?: GestureReaction;
@@ -167,6 +169,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     (data: string) => {
       if (mutedRef.current) return;
       if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
+      if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
       flushPending();
       setIsSpeaking(true);
       trackEvent("audio_playback_started");
@@ -179,6 +182,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     (data: string) => {
       if (mutedRef.current) return;
       if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
+      if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
       flushPending();
       setIsSpeaking(true);
       player.enqueue(data);
@@ -187,6 +191,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   );
 
   const handleAudioEnd = useCallback(() => {
+    if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
     // If no audio arrived (TTS failure), flush as fallback with auto-dismiss
     if (pendingSpeechText.current || pendingActions.current) {
       flushPending();
@@ -217,11 +222,15 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
         if (data.type === "ai-thinking") {
           setAiThinking(true);
+          // Safeguard: auto-clear "typing" if no response within 30s
+          if (thinkingTimeout.current) clearTimeout(thinkingTimeout.current);
+          thinkingTimeout.current = setTimeout(() => setAiThinking(false), 30_000);
           return;
         }
 
         if (data.type === "ai-response") {
           setAiThinking(false);
+          if (thinkingTimeout.current) { clearTimeout(thinkingTimeout.current); thinkingTimeout.current = null; }
           trackEvent("ai_response_received");
           // Stash everything — flushed when audio starts playing
           const actions: typeof pendingActions.current = {
@@ -247,6 +256,15 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             // Stash — audio handlers will flush when first chunk arrives
             pendingSpeechText.current = data.response ?? null;
             pendingActions.current = actions;
+            // Safeguard: if no audio chunk arrives within 8s, flush anyway
+            if (pendingFlushTimeout.current) clearTimeout(pendingFlushTimeout.current);
+            pendingFlushTimeout.current = setTimeout(() => {
+              if (pendingSpeechText.current || pendingActions.current) {
+                flushPending();
+                if (speechTimeout.current) clearTimeout(speechTimeout.current);
+                speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+              }
+            }, 8_000);
           }
           return;
         }

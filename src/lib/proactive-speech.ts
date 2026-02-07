@@ -95,6 +95,8 @@ async function maybeSpeakProactively() {
       }) +
       buildActionSystemPrompt();
 
+    const responseId = crypto.randomUUID();
+
     let raw: string;
     try {
       raw = await chat(messages, systemPrompt);
@@ -121,8 +123,6 @@ async function maybeSpeakProactively() {
 
     // Update activity so we don't immediately trigger again
     touchActivity();
-
-    const responseId = crypto.randomUUID();
 
     // Pause idle animations while Bob is speaking
     pauseIdle();

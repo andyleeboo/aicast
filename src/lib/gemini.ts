@@ -36,11 +36,17 @@ export async function chat(
 
   // Extract only the first text part — later parts may carry thoughtSignature
   // artifacts that cause duplicated/repeated text when concatenated
-  const firstPart = response.candidates?.[0]?.content?.parts?.[0];
-  const text = firstPart?.text ?? "";
-  console.log("[chat] Gemini raw response:", JSON.stringify({ text, partsCount: response.candidates?.[0]?.content?.parts?.length }));
-  if (!text) {
-    throw new Error(`Empty response from Gemini (text=${JSON.stringify(text)})`);
+  const parts = response.candidates?.[0]?.content?.parts;
+  const firstTextPart = parts?.find((p) => p.text)?.text ?? "";
+  console.log("[chat] Gemini response:", JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length }));
+  if (!firstTextPart) {
+    throw new Error("Empty response from Gemini");
   }
-  return text;
+  // Cap response length to prevent runaway output from reaching clients
+  const MAX_RESPONSE_CHARS = 1500;
+  if (firstTextPart.length > MAX_RESPONSE_CHARS) {
+    console.warn(`[chat] Response truncated from ${firstTextPart.length} to ${MAX_RESPONSE_CHARS} chars`);
+    return firstTextPart.slice(0, MAX_RESPONSE_CHARS);
+  }
+  return firstTextPart;
 }
