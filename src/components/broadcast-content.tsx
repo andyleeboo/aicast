@@ -62,7 +62,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const player = useAudioPlayer({
     onEnd: () => {
       setIsSpeaking(false);
-      setSpeechBubble(null);
+      if (!maintenanceModeRef.current) setSpeechBubble(null);
     },
     onError: () => {
       setIsSpeaking(false);
@@ -81,6 +81,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   }, []);
 
   const handleGestureComplete = useCallback(() => {
+    if (maintenanceModeRef.current) return;
     setGesture(null);
   }, []);
 
@@ -104,6 +105,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   }, [sleeping, fireEmote]);
 
   const handleEmoteComplete = useCallback(() => {
+    // During maintenance, keep Bob locked in sleep — don't reset anything
+    if (maintenanceModeRef.current) return;
+
     setSleeping(false);
 
     const pending = pendingEmote.current;
@@ -155,7 +159,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     utter.onend = () => {
       console.log("[web-speech] Ended");
       setIsSpeaking(false);
-      setSpeechBubble(null);
+      if (!maintenanceModeRef.current) setSpeechBubble(null);
     };
     utter.onerror = (e) => { console.error("[web-speech] Error:", e.error); setIsSpeaking(false); };
     window.speechSynthesis.speak(utter);
