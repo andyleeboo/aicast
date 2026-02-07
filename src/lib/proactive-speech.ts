@@ -4,7 +4,7 @@
  */
 import { getListenerCount, emitAction } from "@/lib/action-bus";
 import { chat } from "@/lib/gemini";
-import { speakWithVoice } from "@/lib/gemini-live";
+import { streamSpeech } from "@/lib/gemini-live";
 import { getChannelFromDB } from "@/lib/mock-data";
 import {
   buildProactiveSystemPrompt,
@@ -95,6 +95,24 @@ async function maybeSpeakProactively() {
       }) +
       buildActionSystemPrompt();
 
+    let raw: string;
+    try {
+      raw = await chat(messages, systemPrompt);
+    } catch (err) {
+      console.error("[proactive-speech] Gemini API error:", err);
+      return;
+    }
+
+    const { response, gesture, emote, skillId } = parseTags(raw);
+
+    // Save to rolling history
+    pushHistory({
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: response,
+      timestamp: Date.now(),
+    });
+
     // Update activity so we don't immediately trigger again
     touchActivity();
 
@@ -103,69 +121,30 @@ async function maybeSpeakProactively() {
     // Pause idle animations while Bob is speaking
     pauseIdle();
 
-    let response: string;
-    try {
-      const { transcript } = await speakWithVoice(
-        systemPrompt,
-        messages,
-        (chunk) => {
-          emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
-        },
-      );
-      emitAction({ type: "ai-audio-end", id: responseId });
+    // Broadcast text + gesture
+    emitAction({
+      type: "ai-response",
+      id: responseId,
+      response,
+      gesture,
+      emote,
+      skillId,
+    });
 
-      const parsed = parseTags(transcript || "");
-      response = parsed.response;
-
-      // Save to rolling history
-      pushHistory({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: response,
-        timestamp: Date.now(),
-      });
-
-      // Broadcast text + gesture
-      emitAction({
-        type: "ai-response",
-        id: responseId,
-        response,
-        gesture: parsed.gesture,
-        emote: parsed.emote,
-        skillId: parsed.skillId,
-      });
-    } catch (err) {
-      console.error("[proactive-speech] Live API error, falling back to chat():", err);
-
-      // Fallback: text-only
-      try {
-        const raw = await chat(messages, systemPrompt);
-        const parsed = parseTags(raw);
-        response = parsed.response;
-
-        pushHistory({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: response,
-          timestamp: Date.now(),
-        });
-
-        emitAction({
-          type: "ai-response",
-          id: responseId,
-          response,
-          gesture: parsed.gesture,
-          emote: parsed.emote,
-          skillId: parsed.skillId,
-        });
-      } catch (fallbackErr) {
-        console.error("[proactive-speech] Fallback chat() also failed:", fallbackErr);
+    // Stream audio via Live API
+    streamSpeech(response, (chunk) => {
+      emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
+    })
+      .then(() => {
+        emitAction({ type: "ai-audio-end", id: responseId });
+      })
+      .catch((err) => {
+        console.error("[proactive-speech] Live API TTS error:", err);
+        emitAction({ type: "ai-audio-end", id: responseId });
+      })
+      .finally(() => {
         resumeIdle();
-        return;
-      }
-    } finally {
-      resumeIdle();
-    }
+      });
 
     // Persist to Supabase (fire-and-forget)
     const supabase = createServerSupabaseClient();

@@ -3,7 +3,7 @@
  * to Gemini + TTS + action-bus broadcast.
  */
 import { chat } from "@/lib/gemini";
-import { speakWithVoice } from "@/lib/gemini-live";
+import { streamSpeech } from "@/lib/gemini-live";
 import { getChannelFromDB } from "@/lib/mock-data";
 import type {
   ChatMessage,
@@ -166,102 +166,71 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     buildBatchSystemPrompt() +
     buildActionSystemPrompt();
 
-  // Pause idle — avatar is about to speak
-  pauseIdle();
-
-  let responseText: string | null = null;
-
-  // Use Live API: stream audio chunks to clients as they arrive,
-  // then parse the transcript for tags once the turn completes
+  // Step 1: Get structured text response from chat() (tags + text)
+  let raw: string;
   try {
-    const { transcript } = await speakWithVoice(
-      systemPrompt,
-      messages,
-      (chunk) => {
-        emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
-      },
-    );
-    emitAction({ type: "ai-audio-end", id: responseId });
-
-    const { response, gesture, emote, skillId } = parseTags(
-      transcript || batchText,
-    );
-    responseText = response;
-
-    // Save to history
-    pushHistory({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: batchText,
-      timestamp: Date.now(),
-    });
-    pushHistory({
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: response,
-      timestamp: Date.now(),
-    });
-
-    // Broadcast text + gesture (arrives after audio starts streaming)
-    emitAction({
-      type: "ai-response",
-      id: responseId,
-      response,
-      gesture,
-      emote,
-      skillId,
-    });
+    raw = await chat(messages, systemPrompt);
   } catch (err) {
-    console.error("[chat-queue-init] Live API error, falling back to chat():", err);
-
-    // Fallback: use text-only chat
-    try {
-      const raw = await chat(messages, systemPrompt);
-      const { response, gesture, emote, skillId } = parseTags(raw);
-      responseText = response;
-
-      pushHistory({
-        id: crypto.randomUUID(),
-        role: "user",
-        content: batchText,
-        timestamp: Date.now(),
-      });
-      pushHistory({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: response,
-        timestamp: Date.now(),
-      });
-
-      emitAction({
-        type: "ai-response",
-        id: responseId,
-        response,
-        gesture,
-        emote,
-        skillId,
-      });
-    } catch (fallbackErr) {
-      console.error("[chat-queue-init] Fallback chat() also failed:", fallbackErr);
-    }
-  } finally {
-    resumeIdle();
+    console.error("[chat-queue-init] Gemini API error:", err);
+    return;
   }
 
+  const { response, gesture, emote, skillId } = parseTags(raw);
+
+  // Save AI response to history
+  pushHistory({
+    id: crypto.randomUUID(),
+    role: "user",
+    content: batchText,
+    timestamp: Date.now(),
+  });
+  pushHistory({
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: response,
+    timestamp: Date.now(),
+  });
+
+  // Pause idle — avatar is about to animate
+  pauseIdle();
+
+  // Broadcast text + gesture immediately
+  emitAction({
+    type: "ai-response",
+    id: responseId,
+    response,
+    gesture,
+    emote,
+    skillId,
+  });
+
+  // Step 2: Stream audio via Live API (non-blocking — audio plays while text is shown)
+  streamSpeech(response, (chunk) => {
+    emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
+  })
+    .then(() => {
+      emitAction({ type: "ai-audio-end", id: responseId });
+    })
+    .catch((err) => {
+      console.error("[chat-queue-init] Live API TTS error:", err);
+      emitAction({ type: "ai-audio-end", id: responseId });
+    })
+    .finally(() => {
+      resumeIdle();
+    });
+
   // Persist to Supabase in background (fire-and-forget)
-  if (responseText) {
-    const supabase = createServerSupabaseClient();
-    if (supabase) {
-      supabase
-        .from("messages")
-        .insert({
-          channel_id: STREAMER_ID,
-          role: "assistant",
-          content: responseText,
-        })
-        .then(({ error }) => {
-          if (error) console.error("[chat-queue-init] Supabase insert error:", error);
-        });
-    }
+  const supabase = createServerSupabaseClient();
+  if (supabase) {
+    supabase
+      .from("messages")
+      .insert({
+        channel_id: STREAMER_ID,
+        role: "assistant",
+        content: response,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[chat-queue-init] Supabase insert error:", error);
+      });
   }
 });

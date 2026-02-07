@@ -1,15 +1,15 @@
 /**
- * Gemini Live API session manager.
+ * Gemini Live API — streaming text-to-speech.
  *
- * Opens a fresh WebSocket per turn for streaming text-to-audio.
- * Replaces the old two-step chat() + textToSpeech() pipeline.
+ * Takes plain text, opens a Live API WebSocket, and streams back audio
+ * chunks in real-time. Used after chat() generates the structured text
+ * response (with gesture/emote tags stripped).
  */
 import {
   GoogleGenAI,
   Modality,
   type LiveServerMessage,
 } from "@google/genai";
-import type { ChatMessage } from "./types";
 
 let ai: GoogleGenAI | undefined;
 
@@ -20,41 +20,26 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
-// ── Public API ───────────────────────────────────────────────────────
-
-export interface SpeakResult {
-  audioChunks: string[]; // base64 PCM chunks (24kHz mono 16-bit)
-  transcript: string;
-}
-
 /**
- * Send conversation messages through the Live API and collect streamed audio.
+ * Stream text as spoken audio via the Gemini Live API.
  *
- * Opens a fresh WebSocket, sends the conversation, streams audio chunks
- * back via `onAudioChunk`, and resolves with all chunks + transcript
- * when the turn completes.
- *
- * @param systemPrompt – Full system prompt (personality + action instructions)
- * @param messages – Conversation history to send as context
- * @param onAudioChunk – Called for each audio chunk as it arrives
- * @returns Collected audio chunks and the text transcript
+ * @param text – Plain text to speak (no tags)
+ * @param onAudioChunk – Called for each audio chunk as it arrives (base64 PCM 24kHz mono 16-bit)
+ * @returns All collected audio chunks
  */
-export async function speakWithVoice(
-  systemPrompt: string,
-  messages: ChatMessage[],
+export async function streamSpeech(
+  text: string,
   onAudioChunk?: (base64Audio: string) => void,
-): Promise<SpeakResult> {
-  return new Promise<SpeakResult>((resolve, reject) => {
+): Promise<string[]> {
+  return new Promise<string[]>((resolve, reject) => {
     const audioChunks: string[] = [];
-    let transcript = "";
     let settled = false;
 
-    // Safety timeout — don't hang forever
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true;
         console.warn("[gemini-live] Turn timed out after 30s");
-        resolve({ audioChunks, transcript });
+        resolve(audioChunks);
       }
     }, 30_000);
 
@@ -64,7 +49,6 @@ export async function speakWithVoice(
       const content = message.serverContent;
       if (!content) return;
 
-      // Audio chunks arrive in modelTurn.parts[].inlineData
       if (content.modelTurn?.parts) {
         for (const part of content.modelTurn.parts) {
           if (part.inlineData?.data) {
@@ -74,16 +58,10 @@ export async function speakWithVoice(
         }
       }
 
-      // Output transcription arrives independently
-      if (content.outputTranscription?.text) {
-        transcript += content.outputTranscription.text;
-      }
-
-      // Turn complete — we have all audio + transcript
       if (content.turnComplete) {
         settled = true;
         clearTimeout(timeout);
-        resolve({ audioChunks, transcript });
+        resolve(audioChunks);
       }
     }
 
@@ -92,13 +70,14 @@ export async function speakWithVoice(
         model: "gemini-2.5-flash-native-audio-preview",
         config: {
           responseModalities: [Modality.AUDIO],
-          outputAudioTranscription: {},
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: "Puck" },
             },
           },
-          systemInstruction: systemPrompt,
+          systemInstruction:
+            "You are a voice synthesizer. Read the user's text aloud exactly as written. " +
+            "Do not add commentary, disclaimers, or extra words. Just speak the text.",
         },
         callbacks: {
           onopen: () => {
@@ -118,27 +97,15 @@ export async function speakWithVoice(
               settled = true;
               clearTimeout(timeout);
               console.warn("[gemini-live] Session closed before turn complete");
-              resolve({ audioChunks, transcript });
+              resolve(audioChunks);
             }
           },
         },
       })
       .then((session) => {
-        // Build the turns from message history
-        const turns = messages.map((m) => ({
-          role: m.role === "assistant" ? ("model" as const) : ("user" as const),
-          parts: [{ text: m.content }],
-        }));
-
-        // Send all messages as context
-        if (turns.length > 0) {
-          session.sendClientContent({ turns });
-        } else {
-          // If no messages, send a minimal turn to trigger a response
-          session.sendClientContent({
-            turns: [{ role: "user", parts: [{ text: "(silence)" }] }],
-          });
-        }
+        session.sendClientContent({
+          turns: [{ role: "user", parts: [{ text }] }],
+        });
       })
       .catch((err) => {
         if (!settled) {
