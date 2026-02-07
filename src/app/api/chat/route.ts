@@ -57,7 +57,10 @@ export async function POST(req: NextRequest) {
       .insert({ channel_id: channelId, role: "user", content, username })
       .then(({ error }) => {
         if (error) console.error("[chat] Supabase insert error:", error);
+        else console.log("[chat] Saved user message to Supabase");
       });
+  } else {
+    console.warn("[chat] No Supabase client — message not persisted");
   }
 
   return NextResponse.json({ ok: true });

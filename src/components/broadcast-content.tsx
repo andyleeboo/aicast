@@ -42,6 +42,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSpeechText = useRef<string | null>(null);
+  const pendingActions = useRef<{
+    gesture?: GestureReaction;
+    emote?: EmoteCommand;
+    skillId?: string;
+    aiMessage?: AiMessage;
+  } | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
   const pendingEmote = useRef<EmoteCommand | null>(null);
@@ -62,89 +68,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     },
   });
 
-  const handleSpeechBubble = useCallback((text: string | null) => {
-    if (speechTimeout.current) clearTimeout(speechTimeout.current);
-    speechTimeout.current = null;
-
-    if (!text) {
-      pendingSpeechText.current = null;
-      setSpeechBubble(null);
-      return;
-    }
-
-    // If muted, show bubble immediately (no audio will arrive to trigger it)
-    if (mutedRef.current) {
-      pendingSpeechText.current = null;
-      setSpeechBubble(text);
-      // Auto-dismiss after 5s since there's no audio end event
-      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
-      return;
-    }
-
-    // Stash text — bubble appears when first audio chunk arrives
-    // (handleAudioChunk / handleAudioData will read pendingSpeechText)
-    pendingSpeechText.current = text;
-  }, []);
-
   // Pre-warm AudioContext when user interacts with the page (unlocks autoplay)
   const handleUserInteraction = useCallback(() => {
     player.warmup();
-  }, [player]);
-
-  const handleAudioData = useCallback(
-    (data: string) => {
-      if (mutedRef.current) return;
-
-      // Clear the fallback timeout — audio end will dismiss the bubble
-      if (speechTimeout.current) {
-        clearTimeout(speechTimeout.current);
-        speechTimeout.current = null;
-      }
-
-      // Show the speech bubble now that audio is actually playing
-      if (pendingSpeechText.current) {
-        setSpeechBubble(pendingSpeechText.current);
-        pendingSpeechText.current = null;
-      }
-
-      setIsSpeaking(true);
-      player.play(data);
-    },
-    [player],
-  );
-
-  const handleAudioChunk = useCallback(
-    (data: string) => {
-      if (mutedRef.current) return;
-
-      // Clear the fallback timeout — streaming audio is arriving
-      if (speechTimeout.current) {
-        clearTimeout(speechTimeout.current);
-        speechTimeout.current = null;
-      }
-
-      // Show the speech bubble on first chunk
-      if (pendingSpeechText.current) {
-        setSpeechBubble(pendingSpeechText.current);
-        pendingSpeechText.current = null;
-      }
-
-      setIsSpeaking(true);
-      player.enqueue(data);
-    },
-    [player],
-  );
-
-  const handleAudioEnd = useCallback(() => {
-    // If no audio chunks arrived (TTS failure), show stashed text as fallback
-    if (pendingSpeechText.current) {
-      setSpeechBubble(pendingSpeechText.current);
-      pendingSpeechText.current = null;
-      // Auto-dismiss after 5s since no audio will play
-      if (speechTimeout.current) clearTimeout(speechTimeout.current);
-      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
-    }
-    player.markStreamEnd();
   }, [player]);
 
   const fireEmote = useCallback((cmd: EmoteCommand) => {
@@ -214,6 +140,58 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }, skill.holdMs);
   }, [handleEmote]);
 
+  // Flush all stashed response data (bubble, gesture, emote, chat message)
+  // Called when first audio chunk arrives, or as fallback when TTS fails
+  const flushPending = useCallback(() => {
+    if (pendingSpeechText.current) {
+      setSpeechBubble(pendingSpeechText.current);
+      pendingSpeechText.current = null;
+    }
+    const actions = pendingActions.current;
+    if (actions) {
+      pendingActions.current = null;
+      if (actions.aiMessage) setLatestAiMessage(actions.aiMessage);
+      if (actions.skillId) {
+        activateSkill(actions.skillId);
+      } else {
+        if (actions.gesture) setGesture(actions.gesture);
+        if (actions.emote) handleEmote(actions.emote);
+      }
+    }
+  }, [activateSkill, handleEmote]);
+
+  const handleAudioData = useCallback(
+    (data: string) => {
+      if (mutedRef.current) return;
+      if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
+      flushPending();
+      setIsSpeaking(true);
+      player.play(data);
+    },
+    [player, flushPending],
+  );
+
+  const handleAudioChunk = useCallback(
+    (data: string) => {
+      if (mutedRef.current) return;
+      if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
+      flushPending();
+      setIsSpeaking(true);
+      player.enqueue(data);
+    },
+    [player, flushPending],
+  );
+
+  const handleAudioEnd = useCallback(() => {
+    // If no audio arrived (TTS failure), flush as fallback with auto-dismiss
+    if (pendingSpeechText.current || pendingActions.current) {
+      flushPending();
+      if (speechTimeout.current) clearTimeout(speechTimeout.current);
+      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+    }
+    player.markStreamEnd();
+  }, [player, flushPending]);
+
   function handleUsernameConfirm(name: string) {
     localStorage.setItem(USERNAME_KEY, name);
     setUsername(name);
@@ -239,20 +217,31 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
         if (data.type === "ai-response") {
           setAiThinking(false);
-          // Broadcast AI response: speech bubble, gesture, emote, skill, chat message
-          // Audio arrives separately via ai-audio event
-          if (data.response) handleSpeechBubble(data.response);
-          if (data.skillId) {
-            activateSkill(data.skillId);
+          // Stash everything — flushed when audio starts playing
+          const actions: typeof pendingActions.current = {
+            gesture: data.gesture as GestureReaction | undefined,
+            emote: data.emote as EmoteCommand | undefined,
+            skillId: data.skillId as string | undefined,
+            aiMessage: { id: data.id, content: data.response, timestamp: Date.now() },
+          };
+
+          if (mutedRef.current) {
+            // Muted: no audio will arrive, flush immediately
+            if (data.response) setSpeechBubble(data.response);
+            if (speechTimeout.current) clearTimeout(speechTimeout.current);
+            speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+            setLatestAiMessage(actions.aiMessage!);
+            if (data.skillId) {
+              activateSkill(data.skillId);
+            } else {
+              if (data.gesture) setGesture(data.gesture as GestureReaction);
+              if (data.emote) handleEmote(data.emote as EmoteCommand);
+            }
           } else {
-            if (data.gesture) setGesture(data.gesture as GestureReaction);
-            if (data.emote) handleEmote(data.emote as EmoteCommand);
+            // Stash — audio handlers will flush when first chunk arrives
+            pendingSpeechText.current = data.response ?? null;
+            pendingActions.current = actions;
           }
-          setLatestAiMessage({
-            id: data.id,
-            content: data.response,
-            timestamp: Date.now(),
-          });
           return;
         }
 
@@ -289,7 +278,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
 
     return () => es.close();
-  }, [handleEmote, handleSpeechBubble, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill]);
+  }, [handleEmote, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

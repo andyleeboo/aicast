@@ -98,9 +98,8 @@ export function parseTags(raw: string) {
   }
 
   // Strip any stray action tags the model embedded mid-response
-  remaining = remaining.replace(STRAY_TAG_REGEX, (match, tag) =>
-    knownTags.has(tag) ? "" : match,
-  );
+  // Remove ALL [UPPER_CASE] tags — known or unknown — they're not for the viewer
+  remaining = remaining.replace(STRAY_TAG_REGEX, "");
 
   return { response: remaining.trim(), gesture, emote, skillId, language };
 }
@@ -231,6 +230,9 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
       })
       .then(({ error }) => {
         if (error) console.error("[chat-queue-init] Supabase insert error:", error);
+        else console.log("[chat-queue-init] Saved assistant message to Supabase");
       });
+  } else {
+    console.warn("[chat-queue-init] No Supabase client — message not persisted");
   }
 });

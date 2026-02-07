@@ -118,17 +118,20 @@ export function ChatPanel({
     // Assign to const so TS narrows to non-null inside closures
     const supabase = sb;
 
-    // Load last 50 messages
+    // Load last 50 messages from the past 3 hours
     async function loadMessages() {
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("messages")
         .select("*")
         .eq("channel_id", channelId)
-        .order("created_at", { ascending: true })
+        .gte("created_at", threeHoursAgo)
+        .order("created_at", { ascending: false })
         .limit(50);
 
       if (mounted && data) {
-        setMessages(data.map(dbRowToChatMessage));
+        // Reverse so oldest is first (we fetched newest-first to get the last 50)
+        setMessages(data.reverse().map(dbRowToChatMessage));
       }
     }
 
@@ -248,25 +251,26 @@ export function ChatPanel({
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
         <div className="space-y-2">
           {messages.map((msg) => (
-            <div key={msg.id} className="group relative text-sm leading-relaxed">
-              <span className="pointer-events-none absolute right-full mr-1 text-[10px] text-muted/50 opacity-0 transition-opacity group-hover:opacity-100">
-                {formatTime(msg.timestamp)}
-              </span>
+            <div key={msg.id}>
               {msg.role === "system" ? (
-                <span className="italic text-yellow-400">{msg.content}</span>
+                <span className="text-sm italic text-yellow-400">{msg.content}</span>
               ) : (
                 <>
-                  <span
-                    className={`font-semibold ${
-                      msg.role === "user" ? "text-green-400" : "text-accent"
-                    }`}
-                  >
-                    {msg.role === "user"
-                      ? msg.username || "Anon"
-                      : streamerName}
-                  </span>
-                  <span className="text-muted">: </span>
-                  <span className="text-foreground/90">{msg.content}</span>
+                  <div className="flex items-baseline gap-1.5">
+                    <span
+                      className={`text-sm font-semibold ${
+                        msg.role === "user" ? "text-green-400" : "text-accent"
+                      }`}
+                    >
+                      {msg.role === "user"
+                        ? msg.username || "Anon"
+                        : streamerName}
+                    </span>
+                    <span className="text-[10px] text-muted/50">
+                      {formatTime(msg.timestamp)}
+                    </span>
+                  </div>
+                  <p className="text-sm leading-relaxed text-foreground/90">{msg.content}</p>
                 </>
               )}
             </div>
