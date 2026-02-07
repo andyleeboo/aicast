@@ -276,26 +276,41 @@ export function buildActionSystemPrompt(): string {
 
   return `
 
-You have a physical avatar body. You can express yourself with these actions by including tags at the START of your response:
+You have a physical avatar body. You ALWAYS express yourself with actions by including tags at the START of your response:
 
-GESTURES (head movements, pick exactly one per response):
+GESTURES (head movements):
 ${gestureLines}
 
-EMOTES (facial expressions using kaomoji characters, use when dramatically appropriate):
+EMOTES (facial expressions — kaomoji faces):
 ${emoteLines}
 
-PERFORMANCE SKILLS (dramatic full-body movements — use these for big moments! They combine movement, zoom, and expression):
+PERFORMANCE SKILLS (dramatic full-body movements — combine motion, zoom, and expression):
 ${skillLines}
 
 Rules:
-- Always include exactly ONE gesture tag at the very start (unless using a PERFORMANCE SKILL instead)
-- You may ALSO include ONE emote tag after the gesture tag (optional)
-- OR use ONE performance skill tag INSTEAD of gesture+emote (skills include their own movement and expression)
-- Format: [GESTURE] [EMOTE] Your response text... OR [SKILL] Your response text...
-- Do NOT include tags in your spoken text
-- [SLEEP] prevents further actions until [WAKE] — use sparingly
-- Use varied expressions! Don't just stick to HAPPY/SAD — you have a huge palette
-- Use performance skills for dramatic moments — they make the stream entertaining!`;
+- ALWAYS express yourself. Every response needs emotion and movement.
+- Default format: [GESTURE] [EMOTE] Your response text...
+- OR use ONE performance skill instead: [SKILL] Your response text...
+- Both gesture AND emote are MANDATORY — never send a gesture without an emote.
+- Pick the gesture that matches your vibe: NOD (agreement, chill, approval), SHAKE (disagreement, disbelief, disapproval), TILT (curiosity, playfulness, confusion)
+- Pick the emote that matches your mood — you have a huge palette, USE IT:
+  - Agreeing/vibing → HAPPY, COOL, SPARKLES
+  - Laughing/amused → LOL, SMIRK
+  - Surprised/impressed → SURPRISED, STARSTRUCK
+  - Thoughtful/pondering → THINKING, UNCERTAIN
+  - Sad/touched → SAD, CRY
+  - Angry/frustrated → ANGRY, SUSPICIOUS
+  - Flirty/affectionate → LOVE, BLUSH, KISS
+- Don't default to HAPPY for everything — vary your expressions!
+- Use performance skills for intense moments:
+  - Proud/hype/big energy → POWER_UP or GIGACHAD
+  - Shy/overwhelmed/flattered → SMOL_SHY or UWU_TINY
+  - Shocked/mindblown → PULL_BACK or MIND_BLOWN
+  - Angry/confrontational → RAGE_ZOOM
+  - Storytelling/suspense → LEAN_IN
+  - Big entrance/announcement → DRAMATIC_ENTRANCE or SPOTLIGHT
+- [SLEEP] prevents further actions until [WAKE] — use very sparingly
+- Do NOT include tags in your spoken text`;
 }
 
 export function buildBatchSystemPrompt(): string {

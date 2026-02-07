@@ -238,7 +238,7 @@ export function ChatPanel({
     <div className="flex h-full flex-col bg-surface">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Stream Chat</h2>
+        <h2 className="text-sm font-semibold">The Lobby</h2>
         <span className="text-xs text-muted">
           {messages.length} messages
         </span>
@@ -284,7 +284,7 @@ export function ChatPanel({
           )}
           {messages.length === 0 && !aiThinking && (
             <div className="text-center text-xs text-muted/60 py-8">
-              No messages yet — say something!
+              Chat's empty — be the first to say something
             </div>
           )}
         </div>
@@ -306,7 +306,7 @@ export function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Send a message..."
+            placeholder="Say something..."
             className="flex-1 rounded-lg bg-background px-3 py-2 text-base text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
           />
           <button

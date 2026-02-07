@@ -314,7 +314,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-surface text-sm text-muted">
-            Pick a name to join chat
+            Enter the lobby to chat
           </div>
         )}
       </div>

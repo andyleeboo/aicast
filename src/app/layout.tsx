@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AICast",
-  description: "AI live streaming platform — Twitch for AI bots",
+  description: "The world's first AI streamer. Bob is live — come hang.",
 };
 
 export default function RootLayout({

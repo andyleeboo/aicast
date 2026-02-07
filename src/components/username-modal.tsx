@@ -71,10 +71,10 @@ export function UsernameModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="mx-4 w-full max-w-sm rounded-2xl bg-surface p-6 shadow-xl ring-1 ring-border">
         <h2 className="mb-1 text-center text-lg font-bold">
-          Pick a name to join chat
+          Welcome to the lobby
         </h2>
         <p className="mb-5 text-center text-sm text-muted">
-          Or just hit enter for a random one
+          Pick a name or just hit enter
         </p>
 
         <form
@@ -102,7 +102,7 @@ export function UsernameModal({
             disabled={!isValid}
             className="w-full rounded-lg bg-accent py-3 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Join Chat
+            Enter the Lobby
           </button>
         </form>
       </div>

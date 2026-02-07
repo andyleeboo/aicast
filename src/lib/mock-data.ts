@@ -6,7 +6,7 @@ export const primaryChannel: Channel = {
   name: "Late Night AI",
   description:
     "The world's first AI streamer — unhinged energy, zero filter, powered by Gemini 3. Live now!",
-  category: "Talk Show",
+  category: "Just Chatting",
   isLive: true,
   thumbnailUrl: "/thumbnails/talkshow.svg",
   streamer: {
