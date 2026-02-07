@@ -3,6 +3,7 @@
  * Broadcasts to all viewers via the action-bus SSE.
  */
 import { emitAction } from "@/lib/action-bus";
+import { isShutdownSync } from "@/lib/service-config";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
 
 const IDLE_GESTURES: GestureReaction[] = ["yes", "no", "uncertain"];
@@ -75,7 +76,7 @@ function scheduleNext() {
 
   const delay = randomInt(MIN_INTERVAL_MS, MAX_INTERVAL_MS);
   state.timer = setTimeout(() => {
-    if (state.paused) {
+    if (state.paused || isShutdownSync()) {
       scheduleNext();
       return;
     }

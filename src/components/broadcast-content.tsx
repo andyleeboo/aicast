@@ -334,6 +334,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           return;
         }
 
+        // Ignore idle animations during maintenance — Bob stays asleep
+        if (maintenanceModeRef.current) return;
+
         if (data.type === "skill") {
           const skillId = data.id;
           activateSkill(skillId);
