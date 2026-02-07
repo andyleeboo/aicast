@@ -12,8 +12,10 @@ function getClient(): GoogleGenAI {
 
 export async function textToSpeech(
   text: string,
-  voiceName = "Enceladus",
+  voiceName = "Puck",
+  language?: string,
 ): Promise<string | null> {
+  const langHint = language ? `, speaking in ${language}` : "";
   try {
     const response = await getClient().models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -22,7 +24,7 @@ export async function textToSpeech(
           role: "user",
           parts: [
             {
-              text: `Say in a confident, energetic talk show host voice: ${text}`,
+              text: `Say in a playful, energetic, slightly robotic digital voice${langHint}: ${text}`,
             },
           ],
         },

@@ -24,6 +24,7 @@ import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 // ── Tag parsing (extracted from route.ts) ────────────────────────────
 
 const TAG_REGEX = /^\[([A-Z_]+)\]\s*/;
+const LANG_REGEX = /\[LANG:([a-z]{2,5})\]\s*/i;
 
 const tagToGesture: Record<string, GestureReaction> = {
   NOD: "yes",
@@ -48,6 +49,14 @@ export function parseTags(raw: string) {
   let gesture: GestureReaction = "uncertain";
   let emote: EmoteCommand | null = null;
   let skillId: string | null = null;
+  let language: string | undefined;
+
+  // Extract [LANG:xx] tag (can appear anywhere)
+  const langMatch = remaining.match(LANG_REGEX);
+  if (langMatch) {
+    language = langMatch[1].toLowerCase();
+    remaining = remaining.replace(LANG_REGEX, "");
+  }
 
   const firstMatch = remaining.match(TAG_REGEX);
   if (firstMatch) {
@@ -56,7 +65,7 @@ export function parseTags(raw: string) {
       // Performance skill overrides gesture+emote
       skillId = tagToSkill[tag];
       remaining = remaining.replace(TAG_REGEX, "");
-      return { response: remaining.trim(), gesture, emote, skillId };
+      return { response: remaining.trim(), gesture, emote, skillId, language };
     } else if (tag in tagToGesture) {
       gesture = tagToGesture[tag];
       remaining = remaining.replace(TAG_REGEX, "");
@@ -78,7 +87,7 @@ export function parseTags(raw: string) {
     }
   }
 
-  return { response: remaining.trim(), gesture, emote, skillId };
+  return { response: remaining.trim(), gesture, emote, skillId, language };
 }
 
 // ── Batch formatting (extracted from route.ts) ───────────────────────
@@ -140,7 +149,8 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
   const systemPrompt =
     channel.streamer.personality +
     buildBatchSystemPrompt() +
-    buildActionSystemPrompt();
+    buildActionSystemPrompt() +
+    `\n\nLanguage: Detect the dominant language of the chat batch. Prepend a [LANG:xx] tag (ISO 639-1 code) at the very start of your response, before any gesture/emote tags. Example: [LANG:es] [NOD] [HAPPY] ¡Hola chat! For English, use [LANG:en].`;
 
   // Pause idle only while we're about to animate (not during the API call)
   let raw: string;
@@ -151,7 +161,7 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     return;
   }
 
-  const { response, gesture, emote, skillId } = parseTags(raw);
+  const { response, gesture, emote, skillId, language } = parseTags(raw);
 
   // Save AI response to history for future context
   pushHistory({
@@ -181,7 +191,7 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
   });
 
   // Fire TTS in background — send audio as a follow-up event when ready
-  textToSpeech(response)
+  textToSpeech(response, undefined, language)
     .then((audioData) => {
       if (audioData) {
         emitAction({ type: "ai-audio", id: responseId, audioData });
