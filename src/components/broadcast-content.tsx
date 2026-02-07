@@ -29,6 +29,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [muted, setMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [latestAiMessage, setLatestAiMessage] = useState<AiMessage | null>(null);
+  const [aiThinking, setAiThinking] = useState(false);
+  const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [username, setUsername] = useState<string | null>(() => {
@@ -101,7 +103,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     if (e === "wake" && !sleeping) return;
     if (e === "sleep" && sleeping) return;
 
-    lockedUntil.current = now + 3000;
+    lockedUntil.current = now + 1500;
 
     // If sleeping and a non-wake command arrives, wake first then chain it
     if (sleeping && e !== "wake") {
@@ -159,17 +161,28 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   }
 
   // Subscribe to SSE for remote-triggered actions and AI responses
+  // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {
     const es = new EventSource("/api/avatar/events");
 
+    es.onopen = () => setSseConnected(true);
+    es.onerror = () => setSseConnected(false);
+
     es.onmessage = (event) => {
+      setSseConnected(true);
       try {
         const data = JSON.parse(event.data);
 
+        if (data.type === "ai-thinking") {
+          setAiThinking(true);
+          return;
+        }
+
         if (data.type === "ai-response") {
-          // Broadcast AI response: speech bubble, audio, gesture, emote, skill, chat message
+          setAiThinking(false);
+          // Broadcast AI response: speech bubble, gesture, emote, skill, chat message
+          // Audio arrives separately via ai-audio event
           if (data.response) handleSpeechBubble(data.response);
-          if (data.audioData) handleAudioData(data.audioData);
           if (data.skillId) {
             activateSkill(data.skillId);
           } else {
@@ -181,6 +194,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             content: data.response,
             timestamp: Date.now(),
           });
+          return;
+        }
+
+        if (data.type === "ai-audio") {
+          if (data.audioData) handleAudioData(data.audioData);
           return;
         }
 
@@ -270,6 +288,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
               </svg>
             )}
           </button>
+          {!sseConnected && (
+            <span className="shrink-0 animate-pulse rounded-full bg-yellow-500/20 px-3 py-1 text-xs text-yellow-400">
+              Reconnecting...
+            </span>
+          )}
           <span className="shrink-0 rounded-full bg-surface-hover px-3 py-1 text-xs text-muted">
             {channel.category}
           </span>
@@ -287,6 +310,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onGesture={setGesture}
             onUserInteraction={handleUserInteraction}
             aiMessage={latestAiMessage}
+            aiThinking={aiThinking}
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-surface text-sm text-muted">

@@ -54,8 +54,8 @@ function useAppendAiMessage(
   return useCallback(
     (ai: AiMessage) => {
       setMessages((prev) => {
-        if (prev.some((m) => m.content === ai.content && m.role === "assistant"))
-          return prev;
+        // Dedup by ID (SSE response ID) — no fragile content matching
+        if (prev.some((m) => m.id === ai.id)) return prev;
         return [
           ...prev,
           {
@@ -79,6 +79,7 @@ export function ChatPanel({
   onGesture,
   onUserInteraction,
   aiMessage,
+  aiThinking,
 }: {
   channelId: string;
   streamerName: string;
@@ -87,6 +88,7 @@ export function ChatPanel({
   onGesture?: (gesture: GestureReaction) => void;
   onUserInteraction?: () => void;
   aiMessage?: AiMessage | null;
+  aiThinking?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -94,13 +96,13 @@ export function ChatPanel({
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages or thinking indicator
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages]);
+  }, [messages, aiThinking]);
 
   // Append AI responses received via SSE broadcast
   const appendAiMessage = useAppendAiMessage(setMessages);
@@ -147,8 +149,19 @@ export function ChatPanel({
           const row = payload.new as MessageRow;
           const msg = dbRowToChatMessage(row);
           setMessages((prev) => {
-            // Skip if we already have this message
+            // Skip if we already have this message by ID
             if (prev.some((m) => m.id === msg.id)) return prev;
+            // Skip if we have an optimistic duplicate (same role+content+username within 30s)
+            if (
+              prev.some(
+                (m) =>
+                  m.role === msg.role &&
+                  m.content === msg.content &&
+                  m.username === msg.username &&
+                  Math.abs(m.timestamp - msg.timestamp) < 30_000,
+              )
+            )
+              return prev;
             return [...prev, msg];
           });
         },
@@ -258,7 +271,18 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {messages.length === 0 && (
+          {aiThinking && (
+            <div className="text-sm leading-relaxed">
+              <span className="font-semibold text-accent">{streamerName}</span>
+              <span className="text-muted"> is typing</span>
+              <span className="inline-flex ml-1">
+                <span className="animate-bounce text-muted [animation-delay:0ms]">.</span>
+                <span className="animate-bounce text-muted [animation-delay:150ms]">.</span>
+                <span className="animate-bounce text-muted [animation-delay:300ms]">.</span>
+              </span>
+            </div>
+          )}
+          {messages.length === 0 && !aiThinking && (
             <div className="text-center text-xs text-muted/60 py-8">
               No messages yet — say something!
             </div>

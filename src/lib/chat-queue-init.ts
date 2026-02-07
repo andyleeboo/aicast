@@ -113,12 +113,14 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
 const STREAMER_ID = "late-night-ai";
 
 setFlushHandler(async (batch: BatchedChatMessage[]) => {
-  pauseIdle();
+  const responseId = crypto.randomUUID();
+
+  // Broadcast "thinking" immediately so clients can show a typing indicator
+  emitAction({ type: "ai-thinking", id: responseId });
 
   const channel = await getChannelFromDB(STREAMER_ID);
   if (!channel) {
     console.error("[chat-queue-init] Channel not found:", STREAMER_ID);
-    resumeIdle();
     return;
   }
 
@@ -140,19 +142,16 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     buildBatchSystemPrompt() +
     buildActionSystemPrompt();
 
+  // Pause idle only while we're about to animate (not during the API call)
   let raw: string;
   try {
     raw = await chat(messages, systemPrompt);
   } catch (err) {
     console.error("[chat-queue-init] Gemini API error:", err);
-    resumeIdle();
     return;
   }
 
   const { response, gesture, emote, skillId } = parseTags(raw);
-
-  // Generate speech audio (graceful degradation)
-  const audioData = await textToSpeech(response);
 
   // Save AI response to history for future context
   pushHistory({
@@ -168,26 +167,45 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     timestamp: Date.now(),
   });
 
-  // Insert AI response into Supabase
-  const supabase = createServerSupabaseClient();
-  if (supabase) {
-    await supabase.from("messages").insert({
-      channel_id: STREAMER_ID,
-      role: "assistant",
-      content: response,
-    });
-  }
+  // Pause idle now — avatar is about to play a gesture/emote
+  pauseIdle();
 
-  // Broadcast to ALL connected clients via SSE
+  // Broadcast text + gesture immediately — don't wait for TTS
   emitAction({
     type: "ai-response",
-    id: crypto.randomUUID(),
+    id: responseId,
     response,
-    audioData,
     gesture,
     emote,
     skillId,
   });
 
-  resumeIdle();
+  // Fire TTS in background — send audio as a follow-up event when ready
+  textToSpeech(response)
+    .then((audioData) => {
+      if (audioData) {
+        emitAction({ type: "ai-audio", id: responseId, audioData });
+      }
+    })
+    .catch((err) => {
+      console.error("[chat-queue-init] TTS error:", err);
+    })
+    .finally(() => {
+      resumeIdle();
+    });
+
+  // Persist to Supabase in background (fire-and-forget)
+  const supabase = createServerSupabaseClient();
+  if (supabase) {
+    supabase
+      .from("messages")
+      .insert({
+        channel_id: STREAMER_ID,
+        role: "assistant",
+        content: response,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[chat-queue-init] Supabase insert error:", error);
+      });
+  }
 });

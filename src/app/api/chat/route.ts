@@ -49,15 +49,15 @@ export async function POST(req: NextRequest) {
     timestamp: batchMsg.timestamp,
   });
 
-  // Persist to Supabase if available
+  // Persist to Supabase in background (fire-and-forget — don't block the response)
   const supabase = createServerSupabaseClient();
   if (supabase) {
-    await supabase.from("messages").insert({
-      channel_id: channelId,
-      role: "user",
-      content,
-      username,
-    });
+    supabase
+      .from("messages")
+      .insert({ channel_id: channelId, role: "user", content, username })
+      .then(({ error }) => {
+        if (error) console.error("[chat] Supabase insert error:", error);
+      });
   }
 
   return NextResponse.json({ ok: true });

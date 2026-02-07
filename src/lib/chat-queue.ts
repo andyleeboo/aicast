@@ -1,6 +1,9 @@
 import type { BatchedChatMessage, ChatMessage } from "./types";
 
-const BATCH_WINDOW_MS = 3000;
+// Adaptive batching: short debounce that resets on each new message,
+// hard cap so we never wait forever during a burst.
+const DEBOUNCE_MS = 500; // flush 500ms after last message
+const MAX_WAIT_MS = 2000; // never wait more than 2s from first message
 const MAX_HISTORY = 30;
 
 type FlushHandler = (batch: BatchedChatMessage[]) => Promise<void>;
@@ -8,7 +11,8 @@ type FlushHandler = (batch: BatchedChatMessage[]) => Promise<void>;
 interface ChatQueueState {
   queue: BatchedChatMessage[];
   history: ChatMessage[];
-  timer: ReturnType<typeof setTimeout> | null;
+  debounceTimer: ReturnType<typeof setTimeout> | null;
+  capTimer: ReturnType<typeof setTimeout> | null;
   processing: boolean;
   flushHandler: FlushHandler | null;
 }
@@ -21,7 +25,8 @@ function getState(): ChatQueueState {
     g[GLOBAL_KEY] = {
       queue: [],
       history: [],
-      timer: null,
+      debounceTimer: null,
+      capTimer: null,
       processing: false,
       flushHandler: null,
     };
@@ -29,15 +34,36 @@ function getState(): ChatQueueState {
   return g[GLOBAL_KEY];
 }
 
+function clearTimers(state: ChatQueueState) {
+  if (state.debounceTimer) {
+    clearTimeout(state.debounceTimer);
+    state.debounceTimer = null;
+  }
+  if (state.capTimer) {
+    clearTimeout(state.capTimer);
+    state.capTimer = null;
+  }
+}
+
 function scheduleFlush() {
   const state = getState();
-  if (state.timer) return; // already scheduled
-  state.timer = setTimeout(flushQueue, BATCH_WINDOW_MS);
+
+  // If currently processing, don't schedule — flushQueue re-checks after completion
+  if (state.processing) return;
+
+  // Reset debounce timer on every new message
+  if (state.debounceTimer) clearTimeout(state.debounceTimer);
+  state.debounceTimer = setTimeout(flushQueue, DEBOUNCE_MS);
+
+  // Start hard cap timer on the first message in this batch window
+  if (!state.capTimer) {
+    state.capTimer = setTimeout(flushQueue, MAX_WAIT_MS);
+  }
 }
 
 async function flushQueue() {
   const state = getState();
-  state.timer = null;
+  clearTimers(state);
 
   if (state.processing || state.queue.length === 0) return;
 
