@@ -1,15 +1,13 @@
 /**
- * Gemini Live API — streaming text-to-speech.
+ * Streaming text-to-speech via Gemini TTS REST API.
  *
- * Takes plain text, opens a Live API WebSocket, and streams back audio
- * chunks in real-time. Used after chat() generates the structured text
- * response (with gesture/emote tags stripped).
+ * Uses generateContent with AUDIO modality — the same proven approach
+ * but wrapped to emit audio data through the streaming event bus.
+ *
+ * When the Live API becomes available with the project's API key,
+ * this can be swapped for a WebSocket-based implementation.
  */
-import {
-  GoogleGenAI,
-  Modality,
-  type LiveServerMessage,
-} from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 let ai: GoogleGenAI | undefined;
 
@@ -21,98 +19,47 @@ function getClient(): GoogleGenAI {
 }
 
 /**
- * Stream text as spoken audio via the Gemini Live API.
+ * Generate speech audio for the given text.
  *
  * @param text – Plain text to speak (no tags)
- * @param onAudioChunk – Called for each audio chunk as it arrives (base64 PCM 24kHz mono 16-bit)
- * @returns All collected audio chunks
+ * @param onAudioChunk – Called with the audio data (single chunk for REST API)
+ * @returns The audio data as base64, or null on failure
  */
 export async function streamSpeech(
   text: string,
   onAudioChunk?: (base64Audio: string) => void,
-): Promise<string[]> {
-  return new Promise<string[]>((resolve, reject) => {
-    const audioChunks: string[] = [];
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        console.warn("[gemini-live] Turn timed out after 30s");
-        resolve(audioChunks);
-      }
-    }, 30_000);
-
-    function onMessage(message: LiveServerMessage) {
-      if (settled) return;
-
-      const content = message.serverContent;
-      if (!content) return;
-
-      if (content.modelTurn?.parts) {
-        for (const part of content.modelTurn.parts) {
-          if (part.inlineData?.data) {
-            audioChunks.push(part.inlineData.data);
-            onAudioChunk?.(part.inlineData.data);
-          }
-        }
-      }
-
-      if (content.turnComplete) {
-        settled = true;
-        clearTimeout(timeout);
-        resolve(audioChunks);
-      }
-    }
-
-    getClient()
-      .live.connect({
-        model: "gemini-2.5-flash-native-audio-preview",
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Puck" },
+): Promise<string | null> {
+  try {
+    const response = await getClient().models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Say in a playful, energetic, slightly robotic digital voice: ${text}`,
             },
-          },
-          systemInstruction:
-            "You are a voice synthesizer. Read the user's text aloud exactly as written. " +
-            "Do not add commentary, disclaimers, or extra words. Just speak the text.",
+          ],
         },
-        callbacks: {
-          onopen: () => {
-            console.log("[gemini-live] Session opened");
-          },
-          onmessage: onMessage,
-          onerror: (e: ErrorEvent) => {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timeout);
-              console.error("[gemini-live] Session error:", e.message);
-              reject(new Error(`Live API error: ${e.message}`));
-            }
-          },
-          onclose: () => {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timeout);
-              console.warn("[gemini-live] Session closed before turn complete");
-              resolve(audioChunks);
-            }
+      ],
+      config: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: "Puck" },
           },
         },
-      })
-      .then((session) => {
-        session.sendClientContent({
-          turns: [{ role: "user", parts: [{ text }] }],
-        });
-      })
-      .catch((err) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          reject(err);
-        }
-      });
-  });
+      },
+    });
+
+    const data =
+      response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (data) {
+      onAudioChunk?.(data);
+    }
+    return data ?? null;
+  } catch (err) {
+    console.error("[tts] Gemini TTS error:", err);
+    return null;
+  }
 }
