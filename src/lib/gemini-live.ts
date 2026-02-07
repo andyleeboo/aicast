@@ -56,7 +56,13 @@ export async function streamSpeech(
         contents: [{ role: "user", parts: [{ text: input }] }],
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: "Puck",
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: "Puck",
+              },
+            },
+          },
         },
       }),
       new Promise<null>((_, reject) =>

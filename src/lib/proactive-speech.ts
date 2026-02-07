@@ -20,7 +20,6 @@ import {
 } from "@/lib/chat-queue";
 import { parseTags } from "@/lib/chat-queue-init";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { ChatMessage } from "@/lib/types";
 
 const MIN_SILENCE_MS = 45_000;
@@ -151,22 +150,6 @@ async function maybeSpeakProactively() {
       .finally(() => {
         resumeIdle();
       });
-
-    // Persist to Supabase (fire-and-forget)
-    const supabase = createServerSupabaseClient();
-    if (supabase) {
-      supabase
-        .from("messages")
-        .insert({
-          channel_id: STREAMER_ID,
-          role: "assistant",
-          content: response,
-        })
-        .then(({ error }) => {
-          if (error)
-            console.error("[proactive-speech] Supabase insert error:", error);
-        });
-    }
 
     console.log(
       `[proactive-speech] Bob spoke (${viewerCount} viewers, ${Math.round(silenceMs / 1000)}s silence): ${response.substring(0, 80)}...`,

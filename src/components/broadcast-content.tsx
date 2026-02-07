@@ -14,12 +14,6 @@ interface BroadcastContentProps {
   channel: Channel;
 }
 
-export interface AiMessage {
-  id: string;
-  content: string;
-  timestamp: number;
-}
-
 const USERNAME_KEY = "aicast_username";
 
 export function BroadcastContent({ channel }: BroadcastContentProps) {
@@ -29,8 +23,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [latestAiMessage, setLatestAiMessage] = useState<AiMessage | null>(null);
-  const [aiThinking, setAiThinking] = useState(false);
   const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,14 +35,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setUsername(stored); // null if not found, string if found
   }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const thinkingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSpeechText = useRef<string | null>(null);
   const pendingActions = useRef<{
     gesture?: GestureReaction;
     emote?: EmoteCommand;
     skillId?: string;
-    aiMessage?: AiMessage;
   } | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
@@ -145,7 +135,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }, skill.holdMs);
   }, [handleEmote]);
 
-  // Flush all stashed response data (bubble, gesture, emote, chat message)
+  // Flush all stashed response data (bubble, gesture, emote)
   // Called when first audio chunk arrives, or as fallback when TTS fails
   const flushPending = useCallback(() => {
     if (pendingSpeechText.current) {
@@ -155,7 +145,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     const actions = pendingActions.current;
     if (actions) {
       pendingActions.current = null;
-      if (actions.aiMessage) setLatestAiMessage(actions.aiMessage);
       if (actions.skillId) {
         activateSkill(actions.skillId);
       } else {
@@ -220,24 +209,13 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       try {
         const data = JSON.parse(event.data);
 
-        if (data.type === "ai-thinking") {
-          setAiThinking(true);
-          // Safeguard: auto-clear "typing" if no response within 30s
-          if (thinkingTimeout.current) clearTimeout(thinkingTimeout.current);
-          thinkingTimeout.current = setTimeout(() => setAiThinking(false), 30_000);
-          return;
-        }
-
         if (data.type === "ai-response") {
-          setAiThinking(false);
-          if (thinkingTimeout.current) { clearTimeout(thinkingTimeout.current); thinkingTimeout.current = null; }
           trackEvent("ai_response_received");
           // Stash everything — flushed when audio starts playing
           const actions: typeof pendingActions.current = {
             gesture: data.gesture as GestureReaction | undefined,
             emote: data.emote as EmoteCommand | undefined,
             skillId: data.skillId as string | undefined,
-            aiMessage: { id: data.id, content: data.response, timestamp: Date.now() },
           };
 
           if (mutedRef.current) {
@@ -245,7 +223,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             if (data.response) setSpeechBubble(data.response);
             if (speechTimeout.current) clearTimeout(speechTimeout.current);
             speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
-            setLatestAiMessage(actions.aiMessage!);
             if (data.skillId) {
               activateSkill(data.skillId);
             } else {
@@ -394,8 +371,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onEmote={handleEmote}
             onGesture={setGesture}
             onUserInteraction={handleUserInteraction}
-            aiMessage={latestAiMessage}
-            aiThinking={aiThinking}
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-surface text-sm text-muted">

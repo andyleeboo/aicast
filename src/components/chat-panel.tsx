@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { validateMessage } from "@/lib/moderation";
 import { dbRowToChatMessage } from "@/lib/types";
@@ -11,7 +11,6 @@ import type {
   GestureReaction,
   EmoteCommand,
 } from "@/lib/types";
-import type { AiMessage } from "./broadcast-content";
 
 const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureReaction; msg: string }> = {
   // Gestures
@@ -49,29 +48,6 @@ const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureRe
   "/shy":        { emote: "shy",           msg: "{name} is shy..." },
 };
 
-function useAppendAiMessage(
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-) {
-  return useCallback(
-    (ai: AiMessage) => {
-      setMessages((prev) => {
-        // Dedup by ID (SSE response ID) — no fragile content matching
-        if (prev.some((m) => m.id === ai.id)) return prev;
-        return [
-          ...prev,
-          {
-            id: ai.id,
-            role: "assistant" as const,
-            content: ai.content,
-            timestamp: ai.timestamp,
-          },
-        ];
-      });
-    },
-    [setMessages],
-  );
-}
-
 export function ChatPanel({
   channelId,
   streamerName,
@@ -79,8 +55,6 @@ export function ChatPanel({
   onEmote,
   onGesture,
   onUserInteraction,
-  aiMessage,
-  aiThinking,
 }: {
   channelId: string;
   streamerName: string;
@@ -88,8 +62,6 @@ export function ChatPanel({
   onEmote?: (emote: EmoteCommand) => void;
   onGesture?: (gesture: GestureReaction) => void;
   onUserInteraction?: () => void;
-  aiMessage?: AiMessage | null;
-  aiThinking?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -97,19 +69,13 @@ export function ChatPanel({
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new messages or thinking indicator
+  // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, aiThinking]);
-
-  // Append AI responses received via SSE broadcast
-  const appendAiMessage = useAppendAiMessage(setMessages);
-  useEffect(() => {
-    if (aiMessage) appendAiMessage(aiMessage);
-  }, [aiMessage, appendAiMessage]);
+  }, [messages]);
 
   // Load initial messages + subscribe to Realtime
   useEffect(() => {
@@ -126,6 +92,7 @@ export function ChatPanel({
         .from("messages")
         .select("*")
         .eq("channel_id", channelId)
+        .eq("role", "user")
         .gte("created_at", threeHoursAgo)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -151,6 +118,7 @@ export function ChatPanel({
         },
         (payload) => {
           const row = payload.new as MessageRow;
+          if (row.role !== "user") return; // Only show viewer messages
           const msg = dbRowToChatMessage(row);
           setMessages((prev) => {
             // Skip if we already have this message by ID
@@ -260,14 +228,8 @@ export function ChatPanel({
               ) : (
                 <>
                   <div className="flex items-baseline gap-1.5">
-                    <span
-                      className={`text-sm font-semibold ${
-                        msg.role === "user" ? "text-green-400" : "text-accent"
-                      }`}
-                    >
-                      {msg.role === "user"
-                        ? msg.username || "Anon"
-                        : streamerName}
+                    <span className="text-sm font-semibold text-green-400">
+                      {msg.username || "Anon"}
                     </span>
                     <span className="text-[10px] text-muted/50">
                       {formatTime(msg.timestamp)}
@@ -278,18 +240,7 @@ export function ChatPanel({
               )}
             </div>
           ))}
-          {aiThinking && (
-            <div className="text-sm leading-relaxed">
-              <span className="font-semibold text-accent">{streamerName}</span>
-              <span className="text-muted"> is typing</span>
-              <span className="inline-flex ml-1">
-                <span className="animate-bounce text-muted [animation-delay:0ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:150ms]">.</span>
-                <span className="animate-bounce text-muted [animation-delay:300ms]">.</span>
-              </span>
-            </div>
-          )}
-          {messages.length === 0 && !aiThinking && (
+          {messages.length === 0 && (
             <div className="text-center text-xs text-muted/60 py-8">
               Chat's empty — be the first to say something
             </div>

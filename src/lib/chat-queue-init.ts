@@ -18,7 +18,6 @@ import {
   buildBatchSystemPrompt,
 } from "@/lib/avatar-actions";
 import { emitAction } from "@/lib/action-bus";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { setFlushHandler, getHistory, pushHistory } from "@/lib/chat-queue";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 
@@ -138,9 +137,6 @@ const STREAMER_ID = "late-night-ai";
 setFlushHandler(async (batch: BatchedChatMessage[]) => {
   const responseId = crypto.randomUUID();
 
-  // Broadcast "thinking" immediately so clients can show a typing indicator
-  emitAction({ type: "ai-thinking", id: responseId });
-
   const channel = await getChannelFromDB(STREAMER_ID);
   if (!channel) {
     console.error("[chat-queue-init] Channel not found:", STREAMER_ID);
@@ -227,21 +223,4 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
       resumeIdle();
     });
 
-  // Persist to Supabase in background (fire-and-forget)
-  const supabase = createServerSupabaseClient();
-  if (supabase) {
-    supabase
-      .from("messages")
-      .insert({
-        channel_id: STREAMER_ID,
-        role: "assistant",
-        content: response,
-      })
-      .then(({ error }) => {
-        if (error) console.error("[chat-queue-init] Supabase insert error:", error);
-        else console.log("[chat-queue-init] Saved assistant message to Supabase");
-      });
-  } else {
-    console.warn("[chat-queue-init] No Supabase client — message not persisted");
-  }
 });
