@@ -14,8 +14,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AICast",
-  description: "The world's first AI streamer. Bob is live — come hang.",
+  title: "AICast — 세계 최초 AI 스트리머",
+  description:
+    "Bob이 라이브 중! AI가 직접 방송하고, 채팅하고, 말합니다. 지금 들어오세요.",
+  openGraph: {
+    title: "AICast — 세계 최초 AI 스트리머",
+    description:
+      "Bob이 라이브 중! AI가 직접 방송하고, 채팅하고, 말합니다. 지금 들어오세요.",
+    images: [{ url: "/og-bob.png", width: 1200, height: 630, alt: "Bob — AI 스트리머" }],
+    type: "website",
+    siteName: "AICast",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AICast — 세계 최초 AI 스트리머",
+    description:
+      "Bob이 라이브 중! AI가 직접 방송하고, 채팅하고, 말합니다. 지금 들어오세요.",
+    images: ["/og-bob.png"],
+  },
 };
 
 export default function RootLayout({
