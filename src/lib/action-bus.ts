@@ -37,3 +37,38 @@ export function subscribe(fn: ActionListener): () => void {
 export function getListenerCount(): number {
   return getListeners().size;
 }
+
+// ── Time-windowed viewer tracking (serverless-safe) ──────────────────
+// Unlike listener count which is per-instance, this uses timestamps
+// so stale entries can be pruned even if cancel() never fires.
+
+const VIEWER_KEY = "__viewerTimestamps" as const;
+const VIEWER_TTL_MS = 60_000; // Consider a viewer gone after 60s without heartbeat
+
+function getViewerMap(): Map<string, number> {
+  const g = globalThis as unknown as Record<string, Map<string, number>>;
+  if (!g[VIEWER_KEY]) {
+    g[VIEWER_KEY] = new Map<string, number>();
+  }
+  return g[VIEWER_KEY];
+}
+
+/** Register or refresh a viewer's heartbeat timestamp. */
+export function touchViewer(viewerId: string): void {
+  getViewerMap().set(viewerId, Date.now());
+}
+
+/** Remove a viewer explicitly (on SSE disconnect). */
+export function removeViewer(viewerId: string): void {
+  getViewerMap().delete(viewerId);
+}
+
+/** Count viewers seen within the TTL window, pruning stale entries. */
+export function getViewerCount(): number {
+  const map = getViewerMap();
+  const cutoff = Date.now() - VIEWER_TTL_MS;
+  for (const [id, ts] of map) {
+    if (ts < cutoff) map.delete(id);
+  }
+  return map.size;
+}

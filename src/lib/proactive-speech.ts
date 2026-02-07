@@ -2,7 +2,7 @@
  * Side-effect module: Bob speaks unprompted when viewers are watching but chat is quiet.
  * Import this module to auto-start the proactive speech loop.
  */
-import { getListenerCount, emitAction } from "@/lib/action-bus";
+import { getViewerCount, emitAction } from "@/lib/action-bus";
 import { chat } from "@/lib/gemini";
 import { streamSpeech } from "@/lib/gemini-live";
 import { getChannelFromDB } from "@/lib/mock-data";
@@ -58,7 +58,7 @@ async function maybeSpeakProactively() {
   if (now < state.nextSpeakAt) return;
 
   // No viewers — don't waste tokens
-  const viewerCount = getListenerCount();
+  const viewerCount = getViewerCount();
   if (viewerCount === 0) {
     state.nextSpeakAt = now + randomDelay();
     return;

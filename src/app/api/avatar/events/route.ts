@@ -1,4 +1,4 @@
-import { subscribe, type ActionEvent } from "@/lib/action-bus";
+import { subscribe, touchViewer, removeViewer, type ActionEvent } from "@/lib/action-bus";
 import "@/lib/idle-behavior"; // Start Bob's idle expressions
 import "@/lib/proactive-speech"; // Start Bob's proactive monologues
 
@@ -8,6 +8,7 @@ export async function GET() {
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | undefined;
   let keepalive: ReturnType<typeof setInterval> | undefined;
+  const viewerId = crypto.randomUUID();
 
   const stream = new ReadableStream({
     start(controller) {
@@ -25,12 +26,16 @@ export async function GET() {
       // Send initial keepalive
       controller.enqueue(encoder.encode(": connected\n\n"));
 
+      // Register this viewer
+      touchViewer(viewerId);
+
       unsubscribe = subscribe(send);
 
-      // Keepalive every 30s to prevent timeout
+      // Keepalive every 30s to prevent timeout + refresh viewer timestamp
       keepalive = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
+          touchViewer(viewerId);
         } catch {
           cleanup();
         }
@@ -44,6 +49,7 @@ export async function GET() {
   function cleanup() {
     unsubscribe?.();
     if (keepalive) clearInterval(keepalive);
+    removeViewer(viewerId);
     unsubscribe = undefined;
     keepalive = undefined;
   }

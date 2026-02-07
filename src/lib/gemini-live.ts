@@ -1,13 +1,14 @@
 /**
- * Streaming text-to-speech via Gemini Live API (WebSocket).
+ * Text-to-speech via Gemini REST API (generateContent).
  *
- * Opens a short-lived Live API session per request, sends text in,
- * and streams audio chunks back through the onAudioChunk callback.
+ * Uses a single HTTP request instead of a WebSocket session, making it
+ * compatible with serverless environments like Vercel where long-lived
+ * connections are killed.
  *
  * Audio format: 24 kHz mono 16-bit PCM (base64-encoded), matching
  * what the client audio player expects.
  */
-import { GoogleGenAI, Modality, type Session } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 let ai: GoogleGenAI | undefined;
 
@@ -19,115 +20,64 @@ function getClient(): GoogleGenAI {
 }
 
 /**
- * Stream speech audio for the given text via the Gemini Live API.
+ * Generate speech audio for the given text via the Gemini REST API.
  *
- * Opens a WebSocket session, sends the text, and calls `onAudioChunk`
- * for each incremental audio chunk. Resolves when the model's turn is
- * complete (all audio delivered).
+ * Calls generateContent with AUDIO modality and delivers audio chunks
+ * through the onAudioChunk callback. Resolves when all audio is delivered.
  *
  * @param text – Plain text to speak (no tags)
- * @param onAudioChunk – Called with each base64 PCM audio chunk as it arrives
+ * @param onAudioChunk – Called with each base64 PCM audio chunk
  */
 export async function streamSpeech(
   text: string,
   onAudioChunk?: (base64Audio: string) => void,
 ): Promise<string | null> {
-  let session: Session | undefined;
-
   try {
-    return await new Promise<string | null>((resolve, reject) => {
-      let transcript = "";
-      let resolved = false;
+    console.log(
+      `[gemini-tts] Generating speech (${text.length} chars) via REST API`,
+    );
 
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          console.error("[gemini-live] Session timed out after 30s");
-          session?.close();
-          resolve(null);
-        }
-      }, 30_000);
-
-      const connectAndSend = async () => {
-        session = await getClient().live.connect({
-          model: "gemini-2.5-flash-native-audio-preview",
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: "Puck" },
-              },
-            },
-            outputAudioTranscription: {},
+    const response = await getClient().models.generateContent({
+      model: "gemini-2.5-flash-native-audio-preview",
+      contents: [{ role: "user", parts: [{ text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: "Puck" },
           },
-          callbacks: {
-            onmessage: (msg) => {
-              // Audio chunks arrive in serverContent.modelTurn.parts
-              const parts = msg.serverContent?.modelTurn?.parts;
-              if (parts) {
-                for (const part of parts) {
-                  const audioData = part.inlineData?.data;
-                  if (audioData) {
-                    onAudioChunk?.(audioData);
-                  }
-                }
-              }
-
-              // Collect output transcript
-              const transcriptionText =
-                msg.serverContent?.outputTranscription?.text;
-              if (transcriptionText) {
-                transcript += transcriptionText;
-              }
-
-              // Turn complete — all audio has been delivered
-              if (msg.serverContent?.turnComplete && !resolved) {
-                resolved = true;
-                clearTimeout(timeout);
-                session?.close();
-                resolve(transcript || null);
-              }
-            },
-            onerror: (e) => {
-              console.error("[gemini-live] Session error:", e);
-              if (!resolved) {
-                resolved = true;
-                clearTimeout(timeout);
-                reject(e);
-              }
-            },
-            onclose: () => {
-              console.log("[gemini-live] Session closed");
-              if (!resolved) {
-                resolved = true;
-                clearTimeout(timeout);
-                resolve(transcript || null);
-              }
-            },
-          },
-        });
-
-        // Send the text to speak
-        session.sendClientContent({
-          turns: [{ role: "user", parts: [{ text }] }],
-        });
-
-        console.log(
-          `[gemini-live] Sent text (${text.length} chars) to Live API`,
-        );
-      };
-
-      connectAndSend().catch((err) => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          reject(err);
-        }
-      });
+        },
+      },
     });
+
+    // Extract audio data from the response
+    const candidates = response.candidates;
+    if (!candidates?.length) {
+      console.warn("[gemini-tts] No candidates in response");
+      return null;
+    }
+
+    let hasAudio = false;
+    for (const candidate of candidates) {
+      const parts = candidate.content?.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        const audioData = part.inlineData?.data;
+        if (audioData) {
+          hasAudio = true;
+          onAudioChunk?.(audioData);
+        }
+      }
+    }
+
+    if (!hasAudio) {
+      console.warn("[gemini-tts] Response contained no audio data");
+    }
+
+    // REST TTS doesn't provide a transcript — return null
+    return null;
   } catch (err) {
-    console.error("[gemini-live] streamSpeech error:", err);
-    session?.close();
+    console.error("[gemini-tts] streamSpeech error:", err);
     return null;
   }
 }
