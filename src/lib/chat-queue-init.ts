@@ -25,6 +25,7 @@ import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 
 const TAG_REGEX = /^\[([A-Z_]+)\]\s*/;
 const LANG_REGEX = /\[LANG:([a-z]{2,5})\]\s*/i;
+const STRAY_TAG_REGEX = /\[([A-Z][A-Z_]{1,20})\]\s*/g;
 
 const tagToGesture: Record<string, GestureReaction> = {
   NOD: "yes",
@@ -44,8 +45,16 @@ for (const skill of PERFORMANCE_SKILLS) {
   tagToSkill[skill.tag] = skill.id;
 }
 
+// All known tags — used to strip stray tags embedded mid-response
+const knownTags = new Set([
+  ...Object.keys(tagToGesture),
+  ...Object.keys(tagToEmote),
+  ...Object.keys(tagToSkill),
+]);
+
 export function parseTags(raw: string) {
-  let remaining = raw;
+  // Strip leading junk (thinking artifacts like "_\n", "}\n", whitespace)
+  let remaining = raw.replace(/^[\s_{}*#]+/, "");
   let gesture: GestureReaction = "uncertain";
   let emote: EmoteCommand | null = null;
   let skillId: string | null = null;
@@ -86,6 +95,11 @@ export function parseTags(raw: string) {
       remaining = remaining.replace(TAG_REGEX, "");
     }
   }
+
+  // Strip any stray action tags the model embedded mid-response
+  remaining = remaining.replace(STRAY_TAG_REGEX, (match, tag) =>
+    knownTags.has(tag) ? "" : match,
+  );
 
   return { response: remaining.trim(), gesture, emote, skillId, language };
 }

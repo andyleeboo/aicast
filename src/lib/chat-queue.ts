@@ -15,6 +15,7 @@ interface ChatQueueState {
   capTimer: ReturnType<typeof setTimeout> | null;
   processing: boolean;
   flushHandler: FlushHandler | null;
+  lastActivityTimestamp: number;
 }
 
 const GLOBAL_KEY = "__chatQueueState" as const;
@@ -29,6 +30,7 @@ function getState(): ChatQueueState {
       capTimer: null,
       processing: false,
       flushHandler: null,
+      lastActivityTimestamp: Date.now(),
     };
   }
   return g[GLOBAL_KEY];
@@ -78,6 +80,7 @@ async function flushQueue() {
     console.error("[chat-queue] Flush handler error:", err);
   } finally {
     state.processing = false;
+    state.lastActivityTimestamp = Date.now();
     // If new messages arrived during processing, schedule another flush
     if (state.queue.length > 0) {
       scheduleFlush();
@@ -87,6 +90,7 @@ async function flushQueue() {
 
 export function pushMessage(msg: BatchedChatMessage): void {
   const state = getState();
+  state.lastActivityTimestamp = Date.now();
   state.queue.push(msg);
   scheduleFlush();
 }
@@ -106,4 +110,33 @@ export function getHistory(): ChatMessage[] {
 
 export function setFlushHandler(fn: FlushHandler): void {
   getState().flushHandler = fn;
+}
+
+export function isProcessing(): boolean {
+  return getState().processing;
+}
+
+/** Try to acquire the processing lock. Returns true if acquired, false if already held. */
+export function acquireProcessingLock(): boolean {
+  const state = getState();
+  if (state.processing) return false;
+  state.processing = true;
+  return true;
+}
+
+/** Release the processing lock and reschedule flush if messages queued. */
+export function releaseProcessingLock(): void {
+  const state = getState();
+  state.processing = false;
+  if (state.queue.length > 0) {
+    scheduleFlush();
+  }
+}
+
+export function getLastActivityTimestamp(): number {
+  return getState().lastActivityTimestamp;
+}
+
+export function touchActivity(): void {
+  getState().lastActivityTimestamp = Date.now();
 }

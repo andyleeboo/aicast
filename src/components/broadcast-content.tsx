@@ -33,11 +33,15 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [username, setUsername] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem(USERNAME_KEY);
-  });
+  const [username, setUsername] = useState<string | null>(null);
+
+  // Hydrate from localStorage after mount to avoid SSR mismatch
+  useEffect(() => {
+    const stored = localStorage.getItem(USERNAME_KEY);
+    if (stored) setUsername(stored);
+  }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSpeechText = useRef<string | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
   const pendingEmote = useRef<EmoteCommand | null>(null);
@@ -60,10 +64,20 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   const handleSpeechBubble = useCallback((text: string | null) => {
     if (speechTimeout.current) clearTimeout(speechTimeout.current);
-    setSpeechBubble(text);
+    // Stash text — bubble appears when audio starts (or after fallback timeout)
+    pendingSpeechText.current = text;
     if (text) {
-      // Fallback: show bubble for 5 seconds if no audio drives it
-      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+      // Fallback: if audio never arrives (muted, TTS failure), show bubble after 3s
+      speechTimeout.current = setTimeout(() => {
+        if (pendingSpeechText.current) {
+          setSpeechBubble(pendingSpeechText.current);
+          pendingSpeechText.current = null;
+          // Auto-dismiss after another 5s
+          speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+        }
+      }, 3000);
+    } else {
+      setSpeechBubble(null);
     }
   }, []);
 
@@ -80,6 +94,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       if (speechTimeout.current) {
         clearTimeout(speechTimeout.current);
         speechTimeout.current = null;
+      }
+
+      // Show the speech bubble now that audio is actually playing
+      if (pendingSpeechText.current) {
+        setSpeechBubble(pendingSpeechText.current);
+        pendingSpeechText.current = null;
       }
 
       setIsSpeaking(true);

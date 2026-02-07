@@ -62,7 +62,7 @@ export async function chat(
     contents,
     config: {
       systemInstruction: systemPrompt,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
       temperature: 0.9,
     },
   });

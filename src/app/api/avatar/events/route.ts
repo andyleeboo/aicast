@@ -1,5 +1,6 @@
 import { subscribe, type ActionEvent } from "@/lib/action-bus";
 import "@/lib/idle-behavior"; // Start Bob's idle expressions
+import "@/lib/proactive-speech"; // Start Bob's proactive monologues
 
 export const dynamic = "force-dynamic";
 
