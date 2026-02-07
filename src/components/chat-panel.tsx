@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { validateMessage } from "@/lib/moderation";
 import { dbRowToChatMessage } from "@/lib/types";
+import { trackEvent } from "@/lib/firebase";
 import type {
   ChatMessage,
   MessageRow,
@@ -193,6 +194,7 @@ export function ChatPanel({
       };
       setMessages((prev) => [...prev, systemMsg]);
       setInput("");
+      trackEvent("slash_command_used", { command: text.toLowerCase() });
       if (slashCmd.emote) onEmote?.(slashCmd.emote);
       if (slashCmd.gesture) onGesture?.(slashCmd.gesture);
       return;
@@ -218,6 +220,7 @@ export function ChatPanel({
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
+    trackEvent("chat_message_sent");
 
     // Fire-and-forget to server queue
     fetch("/api/chat", {

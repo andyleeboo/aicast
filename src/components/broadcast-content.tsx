@@ -6,6 +6,7 @@ import { ChatPanel } from "./chat-panel";
 import { UsernameModal } from "./username-modal";
 import { useAudioPlayer } from "@/hooks/use-audio-player";
 import { getSkill } from "@/lib/avatar-actions";
+import { trackEvent } from "@/lib/firebase";
 import type { ScenePose } from "./avatar/face-controller";
 import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
 
@@ -77,6 +78,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const fireEmote = useCallback((cmd: EmoteCommand) => {
     emoteCounter.current += 1;
     setEmote({ command: cmd, key: emoteCounter.current });
+    trackEvent("emote_triggered", { emote: cmd });
   }, []);
 
   const handleGestureComplete = useCallback(() => {
@@ -167,6 +169,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
       flushPending();
       setIsSpeaking(true);
+      trackEvent("audio_playback_started");
       player.play(data);
     },
     [player, flushPending],
@@ -196,6 +199,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   function handleUsernameConfirm(name: string) {
     localStorage.setItem(USERNAME_KEY, name);
     setUsername(name);
+    trackEvent("username_set");
   }
 
   // Subscribe to SSE for remote-triggered actions and AI responses
@@ -218,6 +222,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
         if (data.type === "ai-response") {
           setAiThinking(false);
+          trackEvent("ai_response_received");
           // Stash everything — flushed when audio starts playing
           const actions: typeof pendingActions.current = {
             gesture: data.gesture as GestureReaction | undefined,
@@ -330,8 +335,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           </div>
           <button
             onClick={() => {
-              setMuted((m) => !m);
-              if (!muted) player.stop();
+              const next = !muted;
+              setMuted(next);
+              trackEvent("mute_toggled", { muted: next });
+              if (!next) return;
+              player.stop();
             }}
             className="shrink-0 rounded-full bg-surface-hover px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
             title={muted ? "Unmute" : "Mute"}
