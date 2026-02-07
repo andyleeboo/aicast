@@ -38,7 +38,7 @@ export async function streamSpeech(
     );
 
     const response = await getClient().models.generateContent({
-      model: "gemini-2.5-flash-native-audio-preview",
+      model: "gemini-2.5-flash-preview-tts",
       contents: [{ role: "user", parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
