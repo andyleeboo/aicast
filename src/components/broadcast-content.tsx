@@ -64,21 +64,26 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   const handleSpeechBubble = useCallback((text: string | null) => {
     if (speechTimeout.current) clearTimeout(speechTimeout.current);
-    // Stash text — bubble appears when audio starts (or after fallback timeout)
-    pendingSpeechText.current = text;
-    if (text) {
-      // Fallback: if audio never arrives (muted, TTS failure), show bubble after 3s
-      speechTimeout.current = setTimeout(() => {
-        if (pendingSpeechText.current) {
-          setSpeechBubble(pendingSpeechText.current);
-          pendingSpeechText.current = null;
-          // Auto-dismiss after another 5s
-          speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
-        }
-      }, 3000);
-    } else {
+    speechTimeout.current = null;
+
+    if (!text) {
+      pendingSpeechText.current = null;
       setSpeechBubble(null);
+      return;
     }
+
+    // If muted, show bubble immediately (no audio will arrive to trigger it)
+    if (mutedRef.current) {
+      pendingSpeechText.current = null;
+      setSpeechBubble(text);
+      // Auto-dismiss after 5s since there's no audio end event
+      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+      return;
+    }
+
+    // Stash text — bubble appears when first audio chunk arrives
+    // (handleAudioChunk / handleAudioData will read pendingSpeechText)
+    pendingSpeechText.current = text;
   }, []);
 
   // Pre-warm AudioContext when user interacts with the page (unlocks autoplay)
@@ -131,6 +136,14 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   );
 
   const handleAudioEnd = useCallback(() => {
+    // If no audio chunks arrived (TTS failure), show stashed text as fallback
+    if (pendingSpeechText.current) {
+      setSpeechBubble(pendingSpeechText.current);
+      pendingSpeechText.current = null;
+      // Auto-dismiss after 5s since no audio will play
+      if (speechTimeout.current) clearTimeout(speechTimeout.current);
+      speechTimeout.current = setTimeout(() => setSpeechBubble(null), 5000);
+    }
     player.markStreamEnd();
   }, [player]);
 
