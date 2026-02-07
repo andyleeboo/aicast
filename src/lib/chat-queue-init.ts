@@ -176,6 +176,12 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
 
   const { response, gesture, emote, skillId } = parseTags(raw);
 
+  // Skip empty responses (Gemini sometimes returns only tags or whitespace)
+  if (!response) {
+    console.warn("[chat-queue-init] Empty response after parsing, skipping");
+    return;
+  }
+
   // Save AI response to history
   pushHistory({
     id: crypto.randomUUID(),

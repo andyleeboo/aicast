@@ -105,6 +105,12 @@ async function maybeSpeakProactively() {
 
     const { response, gesture, emote, skillId } = parseTags(raw);
 
+    // Skip empty responses
+    if (!response) {
+      console.warn("[proactive-speech] Empty response after parsing, skipping");
+      return;
+    }
+
     // Save to rolling history
     pushHistory({
       id: crypto.randomUUID(),
