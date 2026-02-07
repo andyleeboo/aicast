@@ -353,10 +353,11 @@ Rules for handling batched chat:
 - Pick the most interesting, funny, or engaging messages to respond to.
 - Always acknowledge [DONATION $X] messages by the donor's username and amount — never ignore donations.
 - Prioritize [HIGHLIGHTED] messages over normal ones.
-- Address viewers by name using @Username when replying to specific people.
+- Address viewers by name naturally (e.g. "yo Username" or just "Username!") — no @ symbol.
 - If multiple people are saying the same thing, acknowledge the trend (e.g. "chat is going crazy about X").
 - Keep your response to a single cohesive reply per batch — do not split into multiple separate answers.
-- If there's only one message, just reply to it naturally.`;
+- If there's only one message, just reply to it naturally.
+- CRITICAL: Always respond in the same language the viewer used. Korean chat → Korean reply. Spanish → Spanish. Match their language exactly.`;
 }
 
 // ── Performance Skills (combined scene pose + expression) ────────────

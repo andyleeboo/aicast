@@ -34,7 +34,7 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
-const TTS_TIMEOUT_MS = 25_000;
+const TTS_TIMEOUT_MS = 35_000;
 const VOICE_NAME = "Puck";
 
 function createGeminiTtsProvider(model: string): TtsProvider {
@@ -87,7 +87,7 @@ const providers: TtsProvider[] = [
 
 // ── Public API (unchanged signature) ─────────────────────────────────
 
-const MAX_TTS_CHARS = 1000;
+const MAX_TTS_CHARS = 500;
 
 /**
  * Generate speech audio via the TTS provider chain.
