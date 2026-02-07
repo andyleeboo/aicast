@@ -20,7 +20,7 @@ import {
 import { emitAction } from "@/lib/action-bus";
 import { setFlushHandler, getHistory, pushHistory } from "@/lib/chat-queue";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
-import { isShutdown } from "@/lib/service-config";
+import { isShutdownSync } from "@/lib/service-config";
 
 // ── Tag parsing (extracted from route.ts) ────────────────────────────
 
@@ -136,7 +136,7 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
 const STREAMER_ID = "late-night-ai";
 
 setFlushHandler(async (batch: BatchedChatMessage[]) => {
-  if (await isShutdown()) {
+  if (isShutdownSync()) {
     console.log("[chat-queue-init] Shutdown mode — skipping AI response");
     return;
   }
