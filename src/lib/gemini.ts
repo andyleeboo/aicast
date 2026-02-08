@@ -14,7 +14,7 @@ function getClient(): GoogleGenAI {
 // fall back to 2.5 Flash if 3 is overloaded/unavailable.
 const CHAT_MODELS = [
   "gemini-3-flash-preview",
-  "gemini-2.5-flash-preview-05-20",
+  "gemini-2.5-flash",
 ];
 
 export async function chat(
