@@ -15,6 +15,10 @@ interface BroadcastContentProps {
 }
 
 const USERNAME_KEY = "aicast_username";
+const CHAT_WIDTH_KEY = "aicast_chat_width";
+const DEFAULT_CHAT_WIDTH = 380;
+const MIN_CHAT_WIDTH = 200;
+const MAX_CHAT_RATIO = 0.6; // chat can grow up to 60% of viewport width
 
 export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [gesture, setGesture] = useState<GestureReaction | null>(null);
@@ -29,12 +33,22 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // undefined = not loaded yet, null = no username stored
   const [username, setUsername] = useState<string | null | undefined>(undefined);
+  const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_WIDTH);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
 
   // Hydrate from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
     const stored = localStorage.getItem(USERNAME_KEY);
-    // Use startTransition to avoid React Compiler cascading-render warning
-    startTransition(() => setUsername(stored));
+    const storedWidth = localStorage.getItem(CHAT_WIDTH_KEY);
+    startTransition(() => {
+      setUsername(stored);
+      if (storedWidth) {
+        const w = Number(storedWidth);
+        if (w >= MIN_CHAT_WIDTH && w <= window.innerWidth * MAX_CHAT_RATIO) setChatWidth(w);
+      }
+    });
   }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,6 +66,16 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const pendingEmote = useRef<EmoteCommand | null>(null);
   const mutedRef = useRef(muted);
   const maintenanceModeRef = useRef(maintenanceMode);
+  const cachedVoices = useRef<SpeechSynthesisVoice[]>([]);
+
+  // Pre-load speech synthesis voices (they load async in Chrome/Safari)
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const loadVoices = () => { cachedVoices.current = window.speechSynthesis.getVoices(); };
+    loadVoices(); // may already be available
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []);
 
   // Keep refs in sync so callbacks see the latest values
   useEffect(() => {
@@ -172,10 +196,22 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     utter.lang = lang;
     utter.rate = 1.05;
     utter.pitch = 1.0;
-    // Try to pick a voice matching the language
-    const voices = window.speechSynthesis.getVoices();
-    const match = voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
-    if (match) utter.voice = match;
+    // Pick a voice matching the language from the pre-loaded cache
+    const voices = cachedVoices.current.length > 0
+      ? cachedVoices.current
+      : window.speechSynthesis.getVoices(); // last-resort sync call
+    const langPrefix = lang.split("-")[0];
+    // Prefer a non-default, local/high-quality voice for the target language
+    const match =
+      voices.find((v) => v.lang.startsWith(langPrefix) && !v.default && v.localService) ||
+      voices.find((v) => v.lang.startsWith(langPrefix) && !v.default) ||
+      voices.find((v) => v.lang.startsWith(langPrefix));
+    if (match) {
+      utter.voice = match;
+      console.log("[web-speech] Selected voice:", match.name, match.lang);
+    } else {
+      console.warn("[web-speech] No voice found for", lang, "— available:", voices.length);
+    }
     utter.onstart = () => { console.log("[web-speech] Started"); setIsSpeaking(true); };
     utter.onend = () => {
       console.log("[web-speech] Ended");
@@ -384,13 +420,47 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     return () => es.close();
   }, [handleEmote, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill, flushPending, speakWithBrowser]);
 
+  // --- Draggable divider logic (desktop only) ---
+  const [dragging, setDragging] = useState(false);
+  const chatWidthRef = useRef(chatWidth);
+  chatWidthRef.current = chatWidth;
+
+  const handleDividerPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = chatWidthRef.current;
+    setDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const maxW = Math.floor(window.innerWidth * MAX_CHAT_RATIO);
+    const clamp = (v: number) => Math.min(maxW, Math.max(MIN_CHAT_WIDTH, v));
+
+    const onMove = (ev: PointerEvent) => {
+      setChatWidth(clamp(dragStartWidth.current - (ev.clientX - dragStartX.current)));
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      isDragging.current = false;
+      setDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      const finalW = clamp(dragStartWidth.current - (ev.clientX - dragStartX.current));
+      localStorage.setItem(CHAT_WIDTH_KEY, String(finalW));
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       {/* Username modal — only after localStorage has been checked */}
       {username === null && <UsernameModal onConfirm={handleUsernameConfirm} />}
 
       {/* Stream area — fixed height on mobile so keyboard only shrinks chat */}
-      <div className="flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:flex-1 lg:shrink">
+      <div className="flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink">
         {/* 3D Avatar */}
         <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
           <AvatarCanvas
@@ -470,11 +540,25 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           <span className="shrink-0 rounded-full bg-surface-hover px-3 py-1 text-xs text-muted">
             {channel.category}
           </span>
+
         </div>
       </div>
 
-      {/* Chat */}
-      <div className="min-h-0 flex-1 w-full border-t border-border lg:h-auto lg:flex-none lg:w-[380px] lg:border-l lg:border-t-0">
+      {/* Draggable divider — desktop only. Outer div is the wide grab zone (20px),
+           inner div is the visible 2px line. touch-action:none prevents browser gestures. */}
+      <div
+        className="hidden shrink-0 cursor-col-resize items-center justify-center lg:flex"
+        style={{ width: 20, marginLeft: -6, marginRight: -6, zIndex: 10, touchAction: "none" }}
+        onPointerDown={handleDividerPointerDown}
+      >
+        <div className={`h-full w-0.5 transition-colors ${dragging ? "bg-accent" : "bg-border hover:bg-muted"}`} />
+      </div>
+
+      {/* Chat — on mobile flex-1 fills the column; on desktop lg:flex-none + width pins it */}
+      <div
+        className="min-h-0 flex-1 border-t border-border lg:h-auto lg:w-[var(--chat-w)] lg:flex-none lg:border-t-0"
+        style={{ "--chat-w": `${chatWidth}px` } as React.CSSProperties}
+      >
         {username ? (
           <ChatPanel
             channelId={channel.id}

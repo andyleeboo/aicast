@@ -357,7 +357,8 @@ Rules for handling batched chat:
 - If multiple people are saying the same thing, acknowledge the trend (e.g. "chat is going crazy about X").
 - Keep your response to a single cohesive reply per batch — do not split into multiple separate answers.
 - If there's only one message, just reply to it naturally.
-- CRITICAL: Always respond in the same language the viewer used. Korean chat → Korean reply. Spanish → Spanish. Match their language exactly.`;
+- CRITICAL: Always respond in the same language the viewer used. Korean chat → Korean reply. Spanish → Spanish. Match their language exactly.
+- When replying in a non-English language, add a [LANG:xx] tag (ISO 639-1 code) AFTER any gesture/emote tags. Examples: [NOD] [LANG:ko] 안녕하세요! / [TILT] [LANG:es] ¡Hola chat! Do NOT add [LANG:en] for English — only non-English.`;
 }
 
 // ── Performance Skills (combined scene pose + expression) ────────────
