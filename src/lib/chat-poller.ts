@@ -46,6 +46,8 @@ async function pollForMessages() {
       .order("created_at", { ascending: true })
       .limit(20);
 
+    console.log("[chat-poller] Query result:", { error: error?.message, rows: data?.length ?? 0, since: lastPollAt });
+
     if (error) {
       console.error("[chat-poller] Supabase query error:", error);
       return;
