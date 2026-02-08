@@ -21,6 +21,7 @@ import { emitAction } from "@/lib/action-bus";
 import { setFlushHandler, getHistory, pushHistory } from "@/lib/chat-queue";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 import { isShutdownSync } from "@/lib/service-config";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 // ── Tag parsing (extracted from route.ts) ────────────────────────────
 
@@ -193,6 +194,22 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     content: response,
     timestamp: Date.now(),
   });
+
+  // Persist to Supabase (fire-and-forget — don't block SSE/TTS)
+  const supabase = createServerSupabaseClient();
+  if (supabase) {
+    supabase
+      .from("messages")
+      .insert({
+        channel_id: STREAMER_ID,
+        role: "assistant",
+        content: response,
+        username: channel.streamer.name,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[chat-queue-init] Supabase insert error:", error.message);
+      });
+  }
 
   // Pause idle — avatar is about to animate
   pauseIdle();

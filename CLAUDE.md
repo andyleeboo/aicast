@@ -52,7 +52,7 @@ Use **bun** as the package manager (`bun install`, `bun add <pkg>`).
 6. `BroadcastContent` (client orchestrator) receives events, triggers avatar animation + speech bubble + audio playback
 7. If no server audio arrives, client falls back to browser Web Speech API
 
-**Bob is speech-only** — his responses appear as voice audio + speech bubble overlay on the 3D avatar. Bob does NOT appear in the chat panel. The chat panel shows only viewer messages. Supabase only persists user messages (no assistant messages).
+**Bob is speech-only** — his responses appear as voice audio + speech bubble overlay on the 3D avatar. Bob does NOT appear in the chat panel. The chat panel shows only viewer messages. Supabase persists both user messages and assistant (Bob) messages for tracking. The chat-poller filters `role: "user"` so Bob's persisted messages don't re-enter the processing pipeline.
 
 Chat uses a **batch system**: messages are collected for ~3 seconds server-side, then sent as a single batch to Gemini. The AI sees "who said what" and responds like a real streamer scanning chat. Users pick a display name before chatting.
 
@@ -146,5 +146,5 @@ git branch -d <branch-name>
 ## Rules
 
 - **Always use Gemini 3 for chat/reasoning** — this project is for the Gemini 3 Hackathon. The chat model in `src/lib/gemini.ts` must be a `gemini-3-*` model (currently `gemini-3-flash-preview`). **Exception**: TTS uses Gemini 2.5 models because Gemini 3 does not support audio output. The TTS provider chain in `src/lib/gemini-live.ts` uses `gemini-2.5-pro-preview-tts` (primary) and `gemini-2.5-flash-preview-tts` (fallback).
-- **Bob is speech-only** — Bob communicates via voice + speech bubble on the 3D avatar. Bob's messages do NOT appear in the chat panel. Do not add assistant message persistence to Supabase or re-add AI messages to the chat UI.
+- **Bob is speech-only** — Bob communicates via voice + speech bubble on the 3D avatar. Bob's messages do NOT appear in the chat panel. Assistant messages are persisted to Supabase (fire-and-forget) for tracking, but must never be shown in the chat UI.
 - Streamer character is **Bob** — do not rename without explicit instruction
