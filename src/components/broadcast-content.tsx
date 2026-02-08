@@ -391,7 +391,10 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       }
     };
 
-    return () => es.close();
+    return () => {
+      es.close();
+      if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
+    };
   }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill]);
 
   // --- Draggable divider logic (mobile: vertical, desktop: horizontal) ---
