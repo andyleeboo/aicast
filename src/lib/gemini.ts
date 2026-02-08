@@ -10,6 +10,13 @@ function getClient(): GoogleGenAI {
   return ai;
 }
 
+// Model fallback chain: try Gemini 3 Flash first (hackathon requirement),
+// fall back to 2.5 Flash if 3 is overloaded/unavailable.
+const CHAT_MODELS = [
+  "gemini-3-flash-preview",
+  "gemini-2.5-flash-preview-05-20",
+];
+
 export async function chat(
   messages: ChatMessage[],
   systemPrompt: string,
@@ -24,46 +31,38 @@ export async function chat(
     contents = [{ role: "user" as const, parts: [{ text: "(No chat yet — start talking!)" }] }];
   }
 
-  const response = await getClient().models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents,
-    config: {
-      systemInstruction: systemPrompt,
-      maxOutputTokens: 8192,
-      temperature: 0.9,
-    },
-  });
+  for (const model of CHAT_MODELS) {
+    try {
+      const response = await getClient().models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          maxOutputTokens: 8192,
+          temperature: 0.9,
+        },
+      });
 
-  // Extract only the first text part — later parts may carry thoughtSignature
-  // artifacts that cause duplicated/repeated text when concatenated
-  let parts = response.candidates?.[0]?.content?.parts;
-  let firstTextPart = parts?.find((p) => p.text)?.text ?? "";
-  console.log("[chat] Gemini response:", JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length, finishReason: response.candidates?.[0]?.finishReason }));
+      const parts = response.candidates?.[0]?.content?.parts;
+      const firstTextPart = parts?.find((p) => p.text)?.text ?? "";
+      console.log(`[chat] ${model} response:`, JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length, finishReason: response.candidates?.[0]?.finishReason }));
 
-  // Retry once on empty response — Gemini 3 Flash occasionally returns no text
-  if (!firstTextPart) {
-    console.warn("[chat] Empty response from Gemini — retrying once");
-    const retry = await getClient().models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents,
-      config: {
-        systemInstruction: systemPrompt,
-        maxOutputTokens: 8192,
-        temperature: 0.9,
-      },
-    });
-    parts = retry.candidates?.[0]?.content?.parts;
-    firstTextPart = parts?.find((p) => p.text)?.text ?? "";
-    console.log("[chat] Retry response:", JSON.stringify({ length: firstTextPart.length, partsCount: parts?.length, finishReason: retry.candidates?.[0]?.finishReason }));
-    if (!firstTextPart) {
-      throw new Error("Empty response from Gemini after retry");
+      if (!firstTextPart) {
+        console.warn(`[chat] Empty response from ${model} — trying next model`);
+        continue;
+      }
+
+      // Cap response length to prevent runaway output from reaching clients
+      const MAX_RESPONSE_CHARS = 1500;
+      if (firstTextPart.length > MAX_RESPONSE_CHARS) {
+        console.warn(`[chat] Response truncated from ${firstTextPart.length} to ${MAX_RESPONSE_CHARS} chars`);
+        return firstTextPart.slice(0, MAX_RESPONSE_CHARS);
+      }
+      return firstTextPart;
+    } catch (err) {
+      console.warn(`[chat] ${model} failed:`, err instanceof Error ? err.message : err);
     }
   }
-  // Cap response length to prevent runaway output from reaching clients
-  const MAX_RESPONSE_CHARS = 1500;
-  if (firstTextPart.length > MAX_RESPONSE_CHARS) {
-    console.warn(`[chat] Response truncated from ${firstTextPart.length} to ${MAX_RESPONSE_CHARS} chars`);
-    return firstTextPart.slice(0, MAX_RESPONSE_CHARS);
-  }
-  return firstTextPart;
+
+  throw new Error("All chat models failed");
 }
