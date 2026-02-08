@@ -1,10 +1,16 @@
-import type { GameState, GameClientState } from "./game-types";
+import type { GameState, GameClientState, GameType, TwentyQGameState } from "./game-types";
 import {
   startGame as startHangman,
   processGuess as hangmanGuess,
   processWordGuess as hangmanWordGuess,
-  toClientState,
+  toClientState as hangmanToClient,
 } from "./hangman";
+import {
+  startGame as startTwentyQ,
+  addQuestion as twentyqAddQuestion,
+  resolveQuestion as twentyqResolveQuestion,
+  toClientState as twentyqToClient,
+} from "./twentyq";
 import { emitAction } from "@/lib/action-bus";
 
 const COOLDOWN_MS = 30_000;
@@ -24,6 +30,17 @@ function getState(): GameManagerState {
   return g[GLOBAL_KEY];
 }
 
+/** Shallow-copy a GameState, preserving the discriminated union. */
+function snapshotGame(state: GameState): GameState {
+  if (state.type === "hangman") return { ...state, data: { ...state.data } };
+  return { ...state, data: { ...state.data, history: [...state.data.history] } };
+}
+
+function toClientStateDispatch(state: GameState): GameClientState {
+  if (state.type === "hangman") return hangmanToClient(state);
+  return twentyqToClient(state);
+}
+
 function emitGameState(clientState: GameClientState): void {
   emitAction({
     type: "game-state",
@@ -38,10 +55,10 @@ export function getActiveGame(): GameState | null {
 
 export function getActiveGameClientState(): GameClientState | null {
   const game = getState().activeGame;
-  return game ? toClientState(game) : null;
+  return game ? toClientStateDispatch(game) : null;
 }
 
-export function startGame(type: "hangman"): GameClientState | { error: string } {
+export function startGame(type: GameType): GameClientState | { error: string } {
   const state = getState();
 
   if (state.activeGame && state.activeGame.status === "playing") {
@@ -55,35 +72,36 @@ export function startGame(type: "hangman"): GameClientState | { error: string } 
 
   if (type === "hangman") {
     state.activeGame = startHangman();
+  } else {
+    state.activeGame = startTwentyQ();
   }
 
-  const clientState = toClientState(state.activeGame!);
+  const clientState = toClientStateDispatch(state.activeGame!);
   emitGameState(clientState);
   return clientState;
 }
+
+// ── Hangman-specific: synchronous guess ─────────────────────────────
 
 export function guess(value: string): { correct: boolean; state: GameClientState; endedGame?: GameState } | { error: string } {
   const mgr = getState();
   if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
     return { error: "No active game" };
   }
-
-  let result: { state: GameState; correct: boolean };
-
-  if (value.length === 1) {
-    result = hangmanGuess(mgr.activeGame, value);
-  } else {
-    result = hangmanWordGuess(mgr.activeGame, value);
+  if (mgr.activeGame.type !== "hangman") {
+    return { error: "Use /ask or /answer for 20 Questions" };
   }
 
+  const result = value.length === 1
+    ? hangmanGuess(mgr.activeGame, value)
+    : hangmanWordGuess(mgr.activeGame, value);
+
   mgr.activeGame = result.state;
-  const clientState = toClientState(result.state);
+  const clientState = toClientStateDispatch(result.state);
   emitGameState(clientState);
 
-  // Auto-end on win/loss: snapshot the game, then clear so other
-  // pathways (chat-queue-init, proactive-speech) don't re-inject the prompt
   if (result.state.status !== "playing") {
-    const endedGame = { ...result.state, data: { ...result.state.data } };
+    const endedGame = snapshotGame(result.state);
     mgr.lastEndedAt = Date.now();
     mgr.activeGame = null;
     return { correct: result.correct, state: clientState, endedGame };
@@ -92,18 +110,78 @@ export function guess(value: string): { correct: boolean; state: GameClientState
   return { correct: result.correct, state: clientState };
 }
 
-export function endGame(): GameState | null {
-  const state = getState();
-  if (state.activeGame) {
-    state.activeGame.status = "lost"; // force end
-    const snapshot = { ...state.activeGame, data: { ...state.activeGame.data } };
-    const clientState = toClientState(state.activeGame);
-    // Reveal the word on forced end
-    clientState.data.maskedWord = [...state.activeGame.data.word];
-    emitGameState(clientState);
-    state.lastEndedAt = Date.now();
-    state.activeGame = null;
+// ── 20Q-specific: async question flow ───────────────────────────────
+
+export function askQuestion(
+  question: string,
+  isGuess: boolean,
+): { state: GameClientState; gameStateForReaction: TwentyQGameState } | { error: string } {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
+    return { error: "No active game" };
+  }
+  if (mgr.activeGame.type !== "twentyq") {
+    return { error: "Use /guess for Hangman" };
+  }
+  if (mgr.activeGame.data.pendingQuestion) {
+    return { error: "Bob is still thinking... wait for his answer" };
+  }
+  if (mgr.activeGame.data.questionsAsked >= mgr.activeGame.data.maxQuestions) {
+    return { error: "No questions left!" };
+  }
+
+  mgr.activeGame = twentyqAddQuestion(mgr.activeGame, question, isGuess);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  // Snapshot with secret intact for building the Gemini prompt
+  const gameStateForReaction = snapshotGame(mgr.activeGame) as TwentyQGameState;
+
+  return { state: clientState, gameStateForReaction };
+}
+
+export function resolveQuestionOnManager(
+  answer: string,
+  warmth: number,
+  isCorrectGuess: boolean,
+): GameState | null {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.type !== "twentyq") {
+    return null; // game was ended while question was pending — safe no-op
+  }
+
+  mgr.activeGame = twentyqResolveQuestion(mgr.activeGame, answer, warmth, isCorrectGuess);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  // Auto-end on win/loss
+  if (mgr.activeGame.status !== "playing") {
+    const snapshot = snapshotGame(mgr.activeGame);
+    mgr.lastEndedAt = Date.now();
+    mgr.activeGame = null;
     return snapshot;
   }
+
   return null;
+}
+
+// ── Shared ──────────────────────────────────────────────────────────
+
+export function endGame(): GameState | null {
+  const state = getState();
+  if (!state.activeGame) return null;
+
+  state.activeGame.status = "lost";
+  const snapshot = snapshotGame(state.activeGame);
+
+  // Build client state with reveal logic per game type
+  const clientState = toClientStateDispatch(state.activeGame);
+  if (clientState.type === "hangman" && state.activeGame.type === "hangman") {
+    clientState.data.maskedWord = [...state.activeGame.data.word];
+  }
+  emitGameState(clientState);
+
+  state.lastEndedAt = Date.now();
+  state.activeGame = null;
+  return snapshot;
 }

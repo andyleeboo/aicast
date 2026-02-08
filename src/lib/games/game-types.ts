@@ -1,10 +1,4 @@
-export interface GameState {
-  gameId: string;
-  type: "hangman"; // extensible union for future games
-  status: "playing" | "won" | "lost";
-  startedAt: number;
-  data: HangmanData; // union with future game data types
-}
+// ── Hangman types ───────────────────────────────────────────────────
 
 export interface HangmanData {
   word: string; // the secret word (server-only, hidden from client events)
@@ -15,7 +9,6 @@ export interface HangmanData {
   category: string; // hint category
 }
 
-// What gets sent to clients (word is hidden)
 export interface HangmanClientData {
   maskedWord: string[];
   guessedLetters: string[];
@@ -24,9 +17,73 @@ export interface HangmanClientData {
   category: string;
 }
 
-export interface GameClientState {
+// ── 20 Questions types ──────────────────────────────────────────────
+
+export type TwentyQCategory = "person" | "place" | "thing";
+
+export interface TwentyQHistoryEntry {
+  question: string;
+  answer: string | null; // null = pending (Gemini hasn't responded yet)
+  warmth: number; // 0 = pending, 1-5 after AI responds
+  isGuess: boolean; // true for /answer attempts
+}
+
+export interface TwentyQData {
+  secret: string; // server-only — never sent to client
+  category: TwentyQCategory;
+  questionsAsked: number;
+  maxQuestions: number; // 20
+  warmth: number; // current 0-5
+  history: TwentyQHistoryEntry[];
+  pendingQuestion: boolean;
+}
+
+export interface TwentyQClientData {
+  category: TwentyQCategory;
+  questionsAsked: number;
+  maxQuestions: number;
+  warmth: number;
+  history: TwentyQHistoryEntry[];
+  pendingQuestion: boolean;
+}
+
+// ── Discriminated union: server state ───────────────────────────────
+
+interface GameStateBase {
   gameId: string;
-  type: "hangman";
   status: "playing" | "won" | "lost";
+  startedAt: number;
+}
+
+export interface HangmanGameState extends GameStateBase {
+  type: "hangman";
+  data: HangmanData;
+}
+
+export interface TwentyQGameState extends GameStateBase {
+  type: "twentyq";
+  data: TwentyQData;
+}
+
+export type GameState = HangmanGameState | TwentyQGameState;
+
+// ── Discriminated union: client state ───────────────────────────────
+
+interface GameClientStateBase {
+  gameId: string;
+  status: "playing" | "won" | "lost";
+}
+
+export interface HangmanClientState extends GameClientStateBase {
+  type: "hangman";
   data: HangmanClientData;
 }
+
+export interface TwentyQClientState extends GameClientStateBase {
+  type: "twentyq";
+  data: TwentyQClientData;
+}
+
+export type GameClientState = HangmanClientState | TwentyQClientState;
+
+export type GameType = GameState["type"];

@@ -2,10 +2,16 @@
 
 import type { GameClientState } from "@/lib/games/game-types";
 import { HangmanBoard } from "./hangman-board";
+import { TwentyQBoard } from "./twentyq-board";
 
 interface GameOverlayProps {
   gameState: GameClientState;
 }
+
+const GAME_LABELS: Record<string, string> = {
+  hangman: "Hangman",
+  twentyq: "20 Questions",
+};
 
 export function GameOverlay({ gameState }: GameOverlayProps) {
   return (
@@ -14,7 +20,7 @@ export function GameOverlay({ gameState }: GameOverlayProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
           <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-            {gameState.type === "hangman" ? "Hangman" : "Game"}
+            {GAME_LABELS[gameState.type] ?? "Game"}
           </span>
           {gameState.status === "playing" && (
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
@@ -27,6 +33,9 @@ export function GameOverlay({ gameState }: GameOverlayProps) {
         <div className="flex-1 min-h-0">
           {gameState.type === "hangman" && (
             <HangmanBoard data={gameState.data} status={gameState.status} />
+          )}
+          {gameState.type === "twentyq" && (
+            <TwentyQBoard data={gameState.data} status={gameState.status} />
           )}
         </div>
       </div>

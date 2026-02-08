@@ -237,6 +237,84 @@ export function ChatPanel({
       return;
     }
 
+    if (lower === "/20q") {
+      setInput("");
+      trackEvent("slash_command_used", { command: "/20q" });
+      fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", game: "twentyq" }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          const msg = data.error
+            ? data.error
+            : `${username} started 20 Questions! Type /ask <question> to play`;
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: msg, timestamp: Date.now(),
+          }]);
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (lower.startsWith("/ask ")) {
+      const value = text.slice(5).trim();
+      if (!value) return;
+      setInput("");
+      trackEvent("slash_command_used", { command: "/ask" });
+      fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ask", value }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) {
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(), role: "system" as const,
+              content: data.error, timestamp: Date.now(),
+            }]);
+            return;
+          }
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: `${username} asked: "${value}" — waiting for Bob...`, timestamp: Date.now(),
+          }]);
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (lower.startsWith("/answer ")) {
+      const value = text.slice(8).trim();
+      if (!value) return;
+      setInput("");
+      trackEvent("slash_command_used", { command: "/answer" });
+      fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "answer", value }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) {
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(), role: "system" as const,
+              content: data.error, timestamp: Date.now(),
+            }]);
+            return;
+          }
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: `${username} guesses: "${value}" — Bob is thinking...`, timestamp: Date.now(),
+          }]);
+        })
+        .catch(() => {});
+      return;
+    }
+
     if (lower === "/endgame") {
       setInput("");
       trackEvent("slash_command_used", { command: "/endgame" });
