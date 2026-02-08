@@ -5,6 +5,7 @@ import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
 import { UsernameModal } from "./username-modal";
 import { useAudioPlayer } from "@/hooks/use-audio-player";
+import { useSpeechBubble } from "@/hooks/use-speech-bubble";
 import { getSkill } from "@/lib/avatar-actions";
 import { trackEvent } from "@/lib/firebase";
 import type { ScenePose } from "./avatar/face-controller";
@@ -24,9 +25,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [gesture, setGesture] = useState<GestureReaction | null>(null);
   const [emote, setEmote] = useState<{ command: EmoteCommand; key: number } | null>(null);
   const [sleeping, setSleeping] = useState(false);
-  const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -50,23 +49,21 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       }
     });
   }, []);
-  const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSpeechText = useRef<string | null>(null);
-  const currentResponseText = useRef<string | null>(null); // kept for browser fallback after flush
-  const currentResponseLang = useRef<string | undefined>(undefined); // language hint from server
+
+  const currentResponseText = useRef<string | null>(null); // for browser fallback (avoids stale closure)
+  const currentResponseLang = useRef<string | undefined>(undefined);
   const gotServerAudio = useRef(false);
-  const pendingActions = useRef<{
-    gesture?: GestureReaction;
-    emote?: EmoteCommand;
-    skillId?: string;
-  } | null>(null);
   const emoteCounter = useRef(0);
   const lockedUntil = useRef(0);
   const pendingEmote = useRef<EmoteCommand | null>(null);
   const mutedRef = useRef(muted);
   const maintenanceModeRef = useRef(maintenanceMode);
   const cachedVoices = useRef<SpeechSynthesisVoice[]>([]);
+
+  // Speech bubble hook — decouples text display from audio playback
+  const bubble = useSpeechBubble();
+  const bubbleRef = useRef(bubble);
+  useEffect(() => { bubbleRef.current = bubble; });
 
   // Pre-load speech synthesis voices (they load async in Chrome/Safari)
   useEffect(() => {
@@ -87,13 +84,14 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
   const player = useAudioPlayer({
     onEnd: () => {
-      setIsSpeaking(false);
-      if (!maintenanceModeRef.current) setSpeechBubble(null);
+      bubbleRef.current.speakingEnded();
     },
     onError: () => {
-      setIsSpeaking(false);
+      bubbleRef.current.speakingEnded();
     },
   });
+  const playerRef = useRef(player);
+  useEffect(() => { playerRef.current = player; });
 
   // Pre-warm AudioContext when user interacts with the page (unlocks autoplay)
   const handleUserInteraction = useCallback(() => {
@@ -194,8 +192,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     window.speechSynthesis.cancel(); // stop any prior utterance
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = lang;
-    utter.rate = 1.05;
-    utter.pitch = 1.0;
+    utter.rate = 0.95;
+    utter.pitch = 0.85;
     // Pick a voice matching the language from the pre-loaded cache
     const voices = cachedVoices.current.length > 0
       ? cachedVoices.current
@@ -212,83 +210,40 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     } else {
       console.warn("[web-speech] No voice found for", lang, "— available:", voices.length);
     }
-    utter.onstart = () => { console.log("[web-speech] Started"); setIsSpeaking(true); };
-    utter.onend = () => {
-      console.log("[web-speech] Ended");
-      setIsSpeaking(false);
-      if (!maintenanceModeRef.current) setSpeechBubble(null);
-    };
-    utter.onerror = (e) => { console.error("[web-speech] Error:", e.error); setIsSpeaking(false); };
+    utter.onstart = () => { console.log("[web-speech] Started"); bubbleRef.current.speakingStarted(); };
+    utter.onend = () => { console.log("[web-speech] Ended"); bubbleRef.current.speakingEnded(); };
+    utter.onerror = (e) => { console.error("[web-speech] Error:", e.error); bubbleRef.current.speakingEnded(); };
     window.speechSynthesis.speak(utter);
   }, [detectLang]);
-
-  // Flush all stashed response data (bubble, gesture, emote)
-  // Called when first audio chunk arrives, or as fallback when TTS fails
-  const flushPending = useCallback(() => {
-    if (pendingSpeechText.current) {
-      setSpeechBubble(pendingSpeechText.current);
-      pendingSpeechText.current = null;
-    }
-    const actions = pendingActions.current;
-    if (actions) {
-      pendingActions.current = null;
-      if (actions.skillId) {
-        activateSkill(actions.skillId);
-      } else {
-        if (actions.gesture) setGesture(actions.gesture);
-        if (actions.emote) handleEmote(actions.emote);
-      }
-    }
-  }, [activateSkill, handleEmote]);
-
-  const handleAudioData = useCallback(
-    (data: string) => {
-      if (mutedRef.current) return;
-      if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
-      if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
-      window.speechSynthesis?.cancel(); // kill browser fallback if racing
-      gotServerAudio.current = true;
-      flushPending();
-      setIsSpeaking(true);
-      trackEvent("audio_playback_started");
-      player.play(data);
-    },
-    [player, flushPending],
-  );
 
   const handleAudioChunk = useCallback(
     (data: string) => {
       console.log("[audio] Chunk received, muted:", mutedRef.current, "size:", data.length);
       if (mutedRef.current) return;
-      if (speechTimeout.current) { clearTimeout(speechTimeout.current); speechTimeout.current = null; }
-      if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
       window.speechSynthesis?.cancel(); // kill browser fallback if racing
       gotServerAudio.current = true;
-      flushPending();
-      setIsSpeaking(true);
-      player.enqueue(data);
+      bubbleRef.current.speakingStarted();
+      playerRef.current.enqueue(data);
     },
-    [player, flushPending],
+    [],
   );
 
   const handleAudioEnd = useCallback(() => {
-    console.log("[audio] Stream end signal, gotServerAudio:", gotServerAudio.current, "pendingText:", !!currentResponseText.current);
-    if (pendingFlushTimeout.current) { clearTimeout(pendingFlushTimeout.current); pendingFlushTimeout.current = null; }
-    // Flush any remaining stashed data
-    flushPending();
+    console.log("[audio] Stream end signal, gotServerAudio:", gotServerAudio.current);
 
-    if (!gotServerAudio.current && currentResponseText.current) {
-      // No server audio arrived at all — use browser speech as fallback
-      console.log("[audio] No server audio — falling back to Web Speech API");
-      setSpeechBubble(currentResponseText.current);
-      speakWithBrowser(currentResponseText.current, currentResponseLang.current);
+    if (!gotServerAudio.current && !mutedRef.current) {
+      // No server audio arrived at all — use browser speech as fallback.
+      // The bubble already shows text (set on ai-response), so just trigger speech.
+      if (currentResponseText.current) {
+        console.log("[audio] No server audio — falling back to Web Speech API");
+        speakWithBrowser(currentResponseText.current, currentResponseLang.current);
+      }
     }
-    // If server audio played, bubble stays until player.onEnd fires
     gotServerAudio.current = false;
     currentResponseText.current = null;
     currentResponseLang.current = undefined;
-    player.markStreamEnd();
-  }, [player, flushPending, speakWithBrowser]);
+    playerRef.current.markStreamEnd();
+  }, [speakWithBrowser]);
 
   function handleUsernameConfirm(name: string) {
     localStorage.setItem(USERNAME_KEY, name);
@@ -314,11 +269,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
         if (data.type === "maintenance-mode") {
           if (data.active && !maintenanceModeRef.current) {
-            setSpeechBubble("System Maintenance");
+            bubbleRef.current.showMaintenance("System Maintenance");
             handleEmote("sleep");
             setMaintenanceMode(true);
           } else if (!data.active && maintenanceModeRef.current) {
-            setSpeechBubble(null);
+            bubbleRef.current.clearMaintenance();
             handleEmote("wake");
             setMaintenanceMode(false);
           }
@@ -332,58 +287,37 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         if (data.type === "ai-response") {
           trackEvent("ai_response_received");
           gotServerAudio.current = false;
-          // Stash everything — flushed when audio starts playing
-          const actions: typeof pendingActions.current = {
-            gesture: data.gesture as GestureReaction | undefined,
-            emote: data.emote as EmoteCommand | undefined,
-            skillId: data.skillId as string | undefined,
-          };
-
           currentResponseText.current = data.response ?? null;
           currentResponseLang.current = data.language as string | undefined;
 
-          if (mutedRef.current) {
-            // Muted: no audio will arrive, flush immediately
-            if (data.response) setSpeechBubble(data.response);
-            if (speechTimeout.current) clearTimeout(speechTimeout.current);
-            speechTimeout.current = setTimeout(() => setSpeechBubble(null), 8000);
-            if (data.skillId) {
-              activateSkill(data.skillId);
-            } else {
-              if (data.gesture) setGesture(data.gesture as GestureReaction);
-              if (data.emote) handleEmote(data.emote as EmoteCommand);
-            }
+          // Fire actions immediately (no stashing)
+          if (data.skillId) {
+            activateSkill(data.skillId);
           } else {
-            // Show "..." loading bubble immediately
-            setSpeechBubble("...");
-            // Stash real text + actions — flushed when first audio chunk arrives
-            pendingSpeechText.current = data.response ?? null;
-            pendingActions.current = actions;
-            // Safeguard: if no audio arrives within 20s, flush actions (but no browser speech here)
-            if (pendingFlushTimeout.current) clearTimeout(pendingFlushTimeout.current);
-            pendingFlushTimeout.current = setTimeout(() => {
-              if (pendingActions.current) {
-                const a = pendingActions.current;
-                pendingActions.current = null;
-                if (a.skillId) {
-                  activateSkill(a.skillId);
-                } else {
-                  if (a.gesture) setGesture(a.gesture);
-                  if (a.emote) handleEmote(a.emote);
-                }
-              }
-              // Show real text in bubble if still waiting
-              if (pendingSpeechText.current) {
-                setSpeechBubble(pendingSpeechText.current);
-                pendingSpeechText.current = null;
-              }
-            }, 20_000);
+            if (data.gesture) setGesture(data.gesture as GestureReaction);
+            if (data.emote) handleEmote(data.emote as EmoteCommand);
+          }
+
+          if (mutedRef.current) {
+            // Muted: show text for reading duration, no audio
+            if (data.response) bubbleRef.current.showForReading(data.response);
+          } else {
+            // Unmuted: show loading then immediately show real text
+            bubbleRef.current.showLoading();
+            if (data.response) bubbleRef.current.showResponse(data.response);
           }
           return;
         }
 
         if (data.type === "ai-audio") {
-          if (data.audioData) handleAudioData(data.audioData);
+          // Legacy single-shot audio
+          if (data.audioData) {
+            if (mutedRef.current) return;
+            window.speechSynthesis?.cancel();
+            gotServerAudio.current = true;
+            bubbleRef.current.speakingStarted();
+            playerRef.current.play(data.audioData);
+          }
           return;
         }
 
@@ -418,12 +352,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
 
     return () => es.close();
-  }, [handleEmote, handleAudioData, handleAudioChunk, handleAudioEnd, activateSkill, flushPending, speakWithBrowser]);
+  }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill]);
 
   // --- Draggable divider logic (desktop only) ---
   const [dragging, setDragging] = useState(false);
   const chatWidthRef = useRef(chatWidth);
-  chatWidthRef.current = chatWidth;
+  useEffect(() => { chatWidthRef.current = chatWidth; });
 
   const handleDividerPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -460,7 +394,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       {username === null && <UsernameModal onConfirm={handleUsernameConfirm} />}
 
       {/* Stream area — fixed height on mobile so keyboard only shrinks chat */}
-      <div className="flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink">
+      <div className="relative flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink">
         {/* 3D Avatar */}
         <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
           <AvatarCanvas
@@ -468,36 +402,40 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onGestureComplete={handleGestureComplete}
             emote={emote}
             onEmoteComplete={handleEmoteComplete}
-            isSpeaking={isSpeaking}
+            isSpeaking={bubble.isSpeaking}
             scenePose={scenePose}
           />
+        </div>
 
-          {/* Speech bubble — hidden on mobile to avoid covering Bob's face */}
-          <div
-            className={`pointer-events-none absolute left-1/2 top-6 z-10 max-w-md -translate-x-1/2 transition-all duration-300 max-lg:hidden ${
-              speechBubble
-                ? "translate-y-0 opacity-100"
-                : "-translate-y-4 opacity-0"
-            }`}
-          >
-            {speechBubble && (
-              <div className="relative rounded-2xl bg-white px-5 py-3 text-sm leading-relaxed text-gray-900 shadow-lg">
-                {speechBubble === "..." ? (
-                  <span className="inline-flex gap-0.5">
-                    <span className="animate-bounce [animation-delay:0ms]">.</span>
-                    <span className="animate-bounce [animation-delay:150ms]">.</span>
-                    <span className="animate-bounce [animation-delay:300ms]">.</span>
-                  </span>
-                ) : (
-                  speechBubble
-                )}
-                {/* Bubble tail / triangle */}
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
-                  <div className="h-0 w-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white" />
-                </div>
+        {/* Speech bubble — flows below canvas on mobile, floats over canvas on desktop */}
+        <div
+          className={`pointer-events-none z-10 justify-center transition-all duration-300 max-lg:mx-4 max-lg:py-1.5 lg:absolute lg:left-1/2 lg:top-[15%] lg:max-w-md lg:-translate-x-1/2 ${
+            bubble.text
+              ? "flex opacity-100 lg:translate-y-0"
+              : "hidden lg:flex lg:-translate-y-4 lg:opacity-0"
+          }`}
+        >
+          {bubble.text && (
+            <div className={`relative rounded-2xl bg-white px-5 py-2.5 text-sm leading-relaxed text-gray-900 shadow-lg transition-shadow duration-300 lg:py-3 ${bubble.isSpeaking ? "ring-2 ring-accent/60 shadow-[0_0_15px_rgba(145,71,255,0.3)]" : ""}`}>
+              {bubble.text === "..." ? (
+                <span className="inline-flex gap-0.5">
+                  <span className="animate-bounce [animation-delay:0ms]">.</span>
+                  <span className="animate-bounce [animation-delay:150ms]">.</span>
+                  <span className="animate-bounce [animation-delay:300ms]">.</span>
+                </span>
+              ) : (
+                bubble.text
+              )}
+              {/* Tail — mobile: points UP toward Bob above */}
+              <div className="absolute -top-2 left-1/2 -translate-x-1/2 lg:hidden">
+                <div className="h-0 w-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-white" />
               </div>
-            )}
-          </div>
+              {/* Tail — desktop: points DOWN toward Bob below */}
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 max-lg:hidden">
+                <div className="h-0 w-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white" />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Stream info bar */}
