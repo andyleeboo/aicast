@@ -1,14 +1,8 @@
 /**
- * Polls Supabase for new user chat messages and processes them inside
- * the SSE endpoint's function context.
+ * Polls Supabase for new user chat messages and processes them.
  *
- * On Vercel serverless, the POST /api/chat handler and the SSE endpoint
- * run in separate function invocations with separate globalThis. The
- * in-memory action-bus only has listeners in the SSE endpoint, so chat
- * messages must be processed HERE (inside the SSE invocation) for
- * emitAction() to reach connected clients.
- *
- * Call `startChatPoller()` from the SSE stream's start() callback.
+ * Called from the SSE endpoint's keepalive interval to piggyback on
+ * a timer context that is known to work on Vercel.
  */
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
@@ -20,19 +14,12 @@ import {
 import { processChatBatch } from "@/lib/chat-queue-init";
 import type { BatchedChatMessage } from "@/lib/types";
 
-const POLL_INTERVAL_MS = 3_000;
-
 let lastPollAt = new Date().toISOString();
 const processedIds = new Set<string>();
 
-async function pollForMessages() {
-  console.log("[chat-poller] pollForMessages called");
-
-  // Don't overlap with proactive speech or another poll cycle
-  if (!acquireProcessingLock()) {
-    console.log("[chat-poller] Lock busy, skipping");
-    return;
-  }
+/** Check Supabase for new chat messages and process any found. */
+export async function checkForNewMessages(): Promise<void> {
+  if (!acquireProcessingLock()) return;
 
   try {
     const supabase = createServerSupabaseClient();
@@ -46,25 +33,17 @@ async function pollForMessages() {
       .order("created_at", { ascending: true })
       .limit(20);
 
-    console.log("[chat-poller] Query result:", { error: error?.message, rows: data?.length ?? 0, since: lastPollAt });
-
     if (error) {
-      console.error("[chat-poller] Supabase query error:", error);
+      console.error("[chat-poller] Supabase error:", error.message);
       return;
     }
     if (!data || data.length === 0) return;
 
-    // Deduplicate against previously processed messages
     const newMessages = data.filter((row) => !processedIds.has(row.id));
     if (newMessages.length === 0) return;
 
-    // Update bookmark
     lastPollAt = data[data.length - 1].created_at;
-    for (const row of newMessages) {
-      processedIds.add(row.id);
-    }
-
-    // Keep dedup set bounded
+    for (const row of newMessages) processedIds.add(row.id);
     if (processedIds.size > 200) {
       const arr = [...processedIds];
       processedIds.clear();
@@ -73,7 +52,6 @@ async function pollForMessages() {
 
     console.log(`[chat-poller] Found ${newMessages.length} new message(s)`);
 
-    // Convert DB rows to batch format
     const batch: BatchedChatMessage[] = newMessages.map((row) => ({
       id: row.id ?? crypto.randomUUID(),
       username: row.username ?? "Anonymous",
@@ -82,7 +60,6 @@ async function pollForMessages() {
       priority: "normal" as const,
     }));
 
-    // Add to in-memory history for Gemini context
     for (const msg of batch) {
       pushHistory({
         id: msg.id,
@@ -93,24 +70,10 @@ async function pollForMessages() {
     }
 
     touchActivity();
-
-    // Process the batch (Gemini → action-bus → TTS)
     await processChatBatch(batch);
   } catch (err) {
-    console.error("[chat-poller] Poll error:", err);
+    console.error("[chat-poller] Error:", err);
   } finally {
     releaseProcessingLock();
   }
-}
-
-/**
- * Start the chat poller. Returns cleanup function to clear the interval.
- * Must be called inside the SSE stream's start() callback.
- */
-export function startChatPoller(): () => void {
-  // Reset bookmark to now so we don't pick up old messages
-  lastPollAt = new Date().toISOString();
-  const timer = setInterval(pollForMessages, POLL_INTERVAL_MS);
-  console.log("[chat-poller] Started (checking every 3s)");
-  return () => clearInterval(timer);
 }

@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { subscribe, touchViewer, removeViewer, type ActionEvent } from "@/lib/action-bus";
 import "@/lib/idle-behavior"; // Start Bob's idle expressions
 import "@/lib/proactive-speech"; // Start Bob's proactive monologues
-import { startChatPoller } from "@/lib/chat-poller";
+import { checkForNewMessages } from "@/lib/chat-poller";
 import { isShutdown } from "@/lib/service-config";
 
 export const dynamic = "force-dynamic";
@@ -15,14 +15,13 @@ export const maxDuration = 60;
 // flush Sentry events and send a clean "reconnect" hint to the client.
 const GRACEFUL_CLOSE_MS = (maxDuration - 5) * 1000; // 55s
 
-// Keepalive interval — must be well under GRACEFUL_CLOSE_MS
-const KEEPALIVE_MS = 15_000; // 15s
+// Chat poll + keepalive combined interval
+const POLL_MS = 3_000;
 
 export async function GET() {
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | undefined;
-  let keepalive: ReturnType<typeof setInterval> | undefined;
-  let stopPoller: (() => void) | undefined;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
   let gracefulTimeout: ReturnType<typeof setTimeout> | undefined;
   const viewerId = crypto.randomUUID();
 
@@ -64,32 +63,38 @@ export async function GET() {
 
       unsubscribe = subscribe(send);
 
-      // Start polling Supabase for new chat messages
-      stopPoller = startChatPoller();
-
-      // Keepalive every 15s to stay under Vercel's timeout radar + refresh viewer
-      keepalive = setInterval(async () => {
+      // Combined poll + keepalive every 3s:
+      // - Check Supabase for new chat messages
+      // - Send keepalive comment to prevent Vercel timeout
+      // - Refresh viewer presence
+      let tickCount = 0;
+      pollTimer = setInterval(async () => {
+        tickCount++;
         try {
+          // Keepalive on every tick
           controller.enqueue(encoder.encode(": keepalive\n\n"));
           touchViewer(viewerId);
 
-          // Check and broadcast maintenance status on each keepalive
-          const shutdown = await isShutdown();
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "maintenance-mode", id: "system", active: shutdown })}\n\n`,
-            ),
-          );
+          // Check for new chat messages
+          await checkForNewMessages();
+
+          // Broadcast maintenance status every 5th tick (~15s)
+          if (tickCount % 5 === 0) {
+            const shutdown = await isShutdown();
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "maintenance-mode", id: "system", active: shutdown })}\n\n`,
+              ),
+            );
+          }
         } catch (err) {
-          console.error("[sse] Keepalive failed:", err);
-          Sentry.captureException(err, { tags: { route: "avatar-events", phase: "keepalive" } });
+          console.error("[sse] Poll/keepalive failed:", err);
+          Sentry.captureException(err, { tags: { route: "avatar-events", phase: "poll" } });
           cleanup();
         }
-      }, KEEPALIVE_MS);
+      }, POLL_MS);
 
       // Graceful self-close before Vercel kills us.
-      // Tell the client to reconnect by sending a "reconnect" event,
-      // then close the stream cleanly.
       gracefulTimeout = setTimeout(() => {
         try {
           controller.enqueue(
@@ -109,13 +114,11 @@ export async function GET() {
 
   function cleanup() {
     unsubscribe?.();
-    stopPoller?.();
-    if (keepalive) clearInterval(keepalive);
+    if (pollTimer) clearInterval(pollTimer);
     if (gracefulTimeout) clearTimeout(gracefulTimeout);
     removeViewer(viewerId);
     unsubscribe = undefined;
-    stopPoller = undefined;
-    keepalive = undefined;
+    pollTimer = undefined;
     gracefulTimeout = undefined;
   }
 
