@@ -107,7 +107,7 @@ async function maybeSpeakProactively() {
       return;
     }
 
-    const { response, gesture, emote, skillId } = parseTags(raw);
+    const { response, gesture, emote, skillId, language } = parseTags(raw);
 
     // Skip empty responses
     if (!response) {
@@ -137,6 +137,7 @@ async function maybeSpeakProactively() {
       gesture,
       emote,
       skillId,
+      language,
     });
 
     // Stream audio via Live API

@@ -129,8 +129,6 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
 const STREAMER_ID = "late-night-ai";
 
 export async function processChatBatch(batch: BatchedChatMessage[]): Promise<void> {
-  console.log(`[chat-queue-init] processChatBatch called with ${batch.length} message(s)`);
-
   if (isShutdownSync()) {
     console.log("[chat-queue-init] Shutdown mode — skipping AI response");
     return;
@@ -163,7 +161,6 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     buildActionSystemPrompt();
 
   // Step 1: Get structured text response from chat() (tags + text)
-  console.log(`[chat-queue-init] Calling Gemini with ${messages.length} messages...`);
   let raw: string;
   try {
     raw = await chat(messages, systemPrompt);
@@ -173,9 +170,8 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     emitAction({ type: "ai-audio-end", id: responseId });
     return;
   }
-  console.log(`[chat-queue-init] Gemini returned ${raw.length} chars`);
 
-  const { response, gesture, emote, skillId } = parseTags(raw);
+  const { response, gesture, emote, skillId, language } = parseTags(raw);
 
   // Skip empty responses (Gemini sometimes returns only tags or whitespace)
   if (!response) {
@@ -209,6 +205,7 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     gesture,
     emote,
     skillId,
+    language,
   });
 
   console.log(`[chat-queue-init] Bob responded to ${batch.length} message(s): ${response.substring(0, 80)}...`);

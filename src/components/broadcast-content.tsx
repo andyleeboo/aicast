@@ -40,6 +40,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSpeechText = useRef<string | null>(null);
   const currentResponseText = useRef<string | null>(null); // kept for browser fallback after flush
+  const currentResponseLang = useRef<string | undefined>(undefined); // language hint from server
   const gotServerAudio = useRef(false);
   const pendingActions = useRef<{
     gesture?: GestureReaction;
@@ -147,15 +148,34 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }, skill.holdMs);
   }, [handleEmote]);
 
+  // Detect language from text using Unicode script ranges
+  const detectLang = useCallback((text: string): string => {
+    // Count characters in each script
+    const ko = text.match(/[\uAC00-\uD7AF\u3130-\u318F]/g)?.length ?? 0;
+    const ja = text.match(/[\u3040-\u309F\u30A0-\u30FF]/g)?.length ?? 0;
+    const zh = text.match(/[\u4E00-\u9FFF]/g)?.length ?? 0;
+    const total = text.replace(/\s/g, "").length || 1;
+    if (ko / total > 0.15) return "ko-KR";
+    if (ja / total > 0.15) return "ja-JP";
+    if (zh / total > 0.15) return "zh-CN";
+    return "en-US";
+  }, []);
+
   // Web Speech API fallback — speaks text via the browser when server TTS fails
-  const speakWithBrowser = useCallback((text: string) => {
+  const speakWithBrowser = useCallback((text: string, langHint?: string) => {
     if (mutedRef.current) { console.log("[web-speech] Skipped — muted"); return; }
     if (typeof window === "undefined" || !window.speechSynthesis) { console.log("[web-speech] Skipped — speechSynthesis unavailable"); return; }
-    console.log("[web-speech] Speaking:", text.substring(0, 60) + "...");
+    const lang = langHint || detectLang(text);
+    console.log("[web-speech] Speaking:", text.substring(0, 60) + "...", "lang:", lang);
     window.speechSynthesis.cancel(); // stop any prior utterance
     const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = lang;
     utter.rate = 1.05;
     utter.pitch = 1.0;
+    // Try to pick a voice matching the language
+    const voices = window.speechSynthesis.getVoices();
+    const match = voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
+    if (match) utter.voice = match;
     utter.onstart = () => { console.log("[web-speech] Started"); setIsSpeaking(true); };
     utter.onend = () => {
       console.log("[web-speech] Ended");
@@ -164,7 +184,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     };
     utter.onerror = (e) => { console.error("[web-speech] Error:", e.error); setIsSpeaking(false); };
     window.speechSynthesis.speak(utter);
-  }, []);
+  }, [detectLang]);
 
   // Flush all stashed response data (bubble, gesture, emote)
   // Called when first audio chunk arrives, or as fallback when TTS fails
@@ -225,11 +245,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       // No server audio arrived at all — use browser speech as fallback
       console.log("[audio] No server audio — falling back to Web Speech API");
       setSpeechBubble(currentResponseText.current);
-      speakWithBrowser(currentResponseText.current);
+      speakWithBrowser(currentResponseText.current, currentResponseLang.current);
     }
     // If server audio played, bubble stays until player.onEnd fires
     gotServerAudio.current = false;
     currentResponseText.current = null;
+    currentResponseLang.current = undefined;
     player.markStreamEnd();
   }, [player, flushPending, speakWithBrowser]);
 
@@ -283,6 +304,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           };
 
           currentResponseText.current = data.response ?? null;
+          currentResponseLang.current = data.language as string | undefined;
 
           if (mutedRef.current) {
             // Muted: no audio will arrive, flush immediately

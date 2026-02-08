@@ -70,7 +70,6 @@ export async function GET() {
       let tickCount = 0;
       pollTimer = setInterval(async () => {
         tickCount++;
-        console.log(`[sse] tick ${tickCount}`);
         try {
           // Keepalive on every tick
           controller.enqueue(encoder.encode(": keepalive\n\n"));

@@ -74,9 +74,7 @@ async function flushQueue() {
 
   try {
     if (state.flushHandler) {
-      console.log("[chat-queue] Calling flush handler with", batch.length, "messages");
       await state.flushHandler(batch);
-      console.log("[chat-queue] Flush handler completed");
     } else {
       console.warn("[chat-queue] No flush handler registered — batch dropped");
     }
