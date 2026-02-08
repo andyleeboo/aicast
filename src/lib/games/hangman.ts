@@ -1,4 +1,4 @@
-import type { GameState, HangmanData, GameClientState } from "./game-types";
+import type { HangmanGameState, HangmanClientState, HangmanData } from "./game-types";
 
 // ── Categorized word list ────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ function buildMask(word: string, guessed: string[]): string[] {
   return [...word].map((ch) => (guessed.includes(ch) ? ch : "_"));
 }
 
-export function startGame(): GameState {
+export function startGame(): HangmanGameState {
   const entry = ALL_ENTRIES[Math.floor(Math.random() * ALL_ENTRIES.length)];
   const data: HangmanData = {
     word: entry.word.toLowerCase(),
@@ -67,13 +67,12 @@ export function startGame(): GameState {
 }
 
 export function processGuess(
-  state: GameState,
+  state: HangmanGameState,
   letter: string,
-): { state: GameState; correct: boolean } {
+): { state: HangmanGameState; correct: boolean } {
   const ch = letter.toLowerCase();
   const { data } = state;
 
-  // Already guessed or game over
   if (data.guessedLetters.includes(ch) || state.status !== "playing") {
     return { state, correct: false };
   }
@@ -86,7 +85,7 @@ export function processGuess(
   const won = !maskedWord.includes("_");
   const lost = wrongGuesses >= data.maxWrong;
 
-  const next: GameState = {
+  const next: HangmanGameState = {
     ...state,
     status: won ? "won" : lost ? "lost" : "playing",
     data: { ...data, guessedLetters, wrongGuesses, maskedWord },
@@ -96,18 +95,17 @@ export function processGuess(
 }
 
 export function processWordGuess(
-  state: GameState,
+  state: HangmanGameState,
   word: string,
-): { state: GameState; correct: boolean } {
+): { state: HangmanGameState; correct: boolean } {
   if (state.status !== "playing") return { state, correct: false };
 
   const guess = word.toLowerCase();
   const correct = guess === state.data.word;
 
   if (correct) {
-    // Reveal all letters
     const maskedWord = [...state.data.word];
-    const next: GameState = {
+    const next: HangmanGameState = {
       ...state,
       status: "won",
       data: { ...state.data, maskedWord },
@@ -115,10 +113,9 @@ export function processWordGuess(
     return { state: next, correct: true };
   }
 
-  // Wrong word guess costs one wrong guess
   const wrongGuesses = state.data.wrongGuesses + 1;
   const lost = wrongGuesses >= state.data.maxWrong;
-  const next: GameState = {
+  const next: HangmanGameState = {
     ...state,
     status: lost ? "lost" : "playing",
     data: { ...state.data, wrongGuesses },
@@ -127,10 +124,10 @@ export function processWordGuess(
 }
 
 /** Strip the secret word for client broadcast */
-export function toClientState(state: GameState): GameClientState {
+export function toClientState(state: HangmanGameState): HangmanClientState {
   return {
     gameId: state.gameId,
-    type: state.type,
+    type: "hangman",
     status: state.status,
     data: {
       maskedWord: state.data.maskedWord,
