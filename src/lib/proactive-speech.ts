@@ -22,6 +22,8 @@ import { parseTags } from "@/lib/chat-queue-init";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 import { isShutdown } from "@/lib/service-config";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getActiveGame } from "@/lib/games/game-manager";
+import { buildGameSystemPrompt } from "@/lib/games/game-prompts";
 import type { ChatMessage } from "@/lib/types";
 
 const MIN_SILENCE_MS = 45_000;
@@ -90,13 +92,17 @@ async function maybeSpeakProactively() {
     const history = getHistory();
     const messages: ChatMessage[] = [...history];
 
+    const activeGame = getActiveGame();
+    const gamePrompt = activeGame ? buildGameSystemPrompt(activeGame) : "";
+
     const systemPrompt =
       channel.streamer.personality +
       buildProactiveSystemPrompt({
         viewerCount,
         secondsSinceLastMessage: silenceMs / 1000,
       }) +
-      buildActionSystemPrompt();
+      buildActionSystemPrompt() +
+      gamePrompt;
 
     const responseId = crypto.randomUUID();
 

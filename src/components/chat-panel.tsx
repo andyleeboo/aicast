@@ -181,6 +181,80 @@ export function ChatPanel({
     if (!text) return;
     onUserInteraction?.();
 
+    // Game commands — /hangman, /guess, /endgame
+    const lower = text.toLowerCase();
+    if (lower === "/hangman") {
+      setInput("");
+      trackEvent("slash_command_used", { command: "/hangman" });
+      fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", game: "hangman" }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          const msg = data.error
+            ? data.error
+            : `${username} started a game of Hangman! Type /guess <letter> to play`;
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: msg, timestamp: Date.now(),
+          }]);
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (lower.startsWith("/guess ")) {
+      const value = text.slice(7).trim();
+      if (!value) return;
+      setInput("");
+      trackEvent("slash_command_used", { command: "/guess" });
+      fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "guess", value }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) {
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(), role: "system" as const,
+              content: data.error, timestamp: Date.now(),
+            }]);
+            return;
+          }
+          const label = value.length === 1 ? value.toUpperCase() : `"${value}"`;
+          const msg = data.correct
+            ? `${username} guessed ${label} — correct!`
+            : `${username} guessed ${label} — wrong!`;
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: msg, timestamp: Date.now(),
+          }]);
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (lower === "/endgame") {
+      setInput("");
+      trackEvent("slash_command_used", { command: "/endgame" });
+      fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      })
+        .then(() => {
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: `${username} ended the game`, timestamp: Date.now(),
+          }]);
+        })
+        .catch(() => {});
+      return;
+    }
+
     // Check for slash commands — bypass API entirely
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
     if (slashCmd) {

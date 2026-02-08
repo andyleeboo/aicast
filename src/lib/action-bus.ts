@@ -1,5 +1,7 @@
+import type { GameClientState } from "@/lib/games/game-types";
+
 export interface ActionEvent {
-  type: "gesture" | "emote" | "skill" | "ai-response" | "ai-thinking" | "ai-audio" | "ai-audio-chunk" | "ai-audio-end" | "maintenance-mode" | "reconnect";
+  type: "gesture" | "emote" | "skill" | "ai-response" | "ai-thinking" | "ai-audio" | "ai-audio-chunk" | "ai-audio-end" | "maintenance-mode" | "reconnect" | "game-state";
   id: string; // e.g. "gesture:yes", "emote:wink", "skill:dramatic-zoom", or unique response id
   response?: string;
   audioData?: string | null;
@@ -8,6 +10,7 @@ export interface ActionEvent {
   skillId?: string | null;
   language?: string; // BCP-47 language code (e.g. "ko", "en") for TTS voice selection
   active?: boolean; // maintenance-mode flag
+  gameState?: GameClientState; // game-state event payload
 }
 
 type ActionListener = (event: ActionEvent) => void;

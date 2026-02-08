@@ -22,6 +22,8 @@ import { setFlushHandler, getHistory, pushHistory } from "@/lib/chat-queue";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 import { isShutdownSync } from "@/lib/service-config";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getActiveGame } from "@/lib/games/game-manager";
+import { buildGameSystemPrompt } from "@/lib/games/game-prompts";
 
 // ── Tag parsing (extracted from route.ts) ────────────────────────────
 
@@ -156,10 +158,14 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     },
   ];
 
+  const activeGame = getActiveGame();
+  const gamePrompt = activeGame ? buildGameSystemPrompt(activeGame) : "";
+
   const systemPrompt =
     channel.streamer.personality +
     buildBatchSystemPrompt() +
-    buildActionSystemPrompt();
+    buildActionSystemPrompt() +
+    gamePrompt;
 
   // Step 1: Get structured text response from chat() (tags + text)
   let raw: string;

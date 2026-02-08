@@ -4,12 +4,14 @@ import { useState, useCallback, useRef, useEffect, startTransition } from "react
 import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
 import { UsernameModal } from "./username-modal";
+import { GameOverlay } from "./game/game-overlay";
 import { useAudioPlayer } from "@/hooks/use-audio-player";
 import { useSpeechBubble } from "@/hooks/use-speech-bubble";
 import { getSkill } from "@/lib/avatar-actions";
 import { trackEvent } from "@/lib/firebase";
 import type { ScenePose } from "./avatar/face-controller";
 import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
+import type { GameClientState } from "@/lib/games/game-types";
 
 interface BroadcastContentProps {
   channel: Channel;
@@ -34,7 +36,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [sseConnected, setSseConnected] = useState(true);
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [gameState, setGameState] = useState<GameClientState | null>(null);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // undefined = not loaded yet, null = no username stored
   const [username, setUsername] = useState<string | null | undefined>(undefined);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_WIDTH);
@@ -344,6 +348,29 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           return;
         }
 
+        if (data.type === "game-state" && data.gameState) {
+          const gs = data.gameState as GameClientState;
+          setGameState(gs);
+
+          if (gs.status === "playing") {
+            // Bob slides aside for the whiteboard
+            setScenePose({ x: -1.8, scale: 0.7 });
+            if (gameEndTimer.current) {
+              clearTimeout(gameEndTimer.current);
+              gameEndTimer.current = null;
+            }
+          } else {
+            // Game ended (won/lost) — wait 5s then hide overlay and reset Bob
+            if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
+            gameEndTimer.current = setTimeout(() => {
+              setGameState(null);
+              setScenePose(null);
+              gameEndTimer.current = null;
+            }, 5000);
+          }
+          return;
+        }
+
         // Ignore idle animations during maintenance — Bob stays asleep
         if (maintenanceModeRef.current) return;
 
@@ -364,7 +391,10 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       }
     };
 
-    return () => es.close();
+    return () => {
+      es.close();
+      if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
+    };
   }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill]);
 
   // --- Draggable divider logic (mobile: vertical, desktop: horizontal) ---
@@ -453,6 +483,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             isSpeaking={bubble.isSpeaking}
             scenePose={scenePose}
           />
+          {gameState && <GameOverlay gameState={gameState} />}
         </div>
 
         {/* Speech bubble — flows below canvas on mobile, floats over canvas on desktop */}
