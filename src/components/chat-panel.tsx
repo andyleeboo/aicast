@@ -46,6 +46,7 @@ const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureRe
   "/pouting":    { emote: "pouting",       msg: "{name} pouts" },
   "/derp":       { emote: "derp",          msg: "{name} derps out" },
   "/shy":        { emote: "shy",           msg: "{name} is shy..." },
+  "/spin":       { emote: "spin",          msg: "{name} spins around!" },
 };
 
 export function ChatPanel({

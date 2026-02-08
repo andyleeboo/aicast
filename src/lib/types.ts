@@ -91,7 +91,9 @@ export type EmoteCommand =
   | "dead" | "mindblown" | "facepalm" | "shrug" | "judging" | "plotting"
   | "suspicious" | "pouting" | "flirty" | "daydreaming" | "zen" | "hyper"
   | "dramatic" | "sarcastic" | "starstruck" | "grateful" | "hopeful"
-  | "nostalgic" | "peaceful" | "fierce";
+  | "nostalgic" | "peaceful" | "fierce"
+  // Physical actions
+  | "spin";
 
 export type MessagePriority = "normal" | "highlight" | "donation";
 

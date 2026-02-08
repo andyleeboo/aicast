@@ -234,6 +234,9 @@ const EMOTE_DEFS: Record<string, EmoteDef> = {
   nostalgic:   { name: "Nostalgic", description: "ˋωˊ — nostalgia" },
   peaceful:    { name: "Peaceful", description: "˘◡˘ — peace" },
   fierce:      { name: "Fierce", description: "▼∀▼ — fierceness" },
+
+  // Physical actions
+  spin:        { name: "Spin", description: "Fast 360° spin — celebration, showboating, hype", aiVisible: true },
 };
 
 // ── Build the full AVATAR_ACTIONS array ─────────────────────────────
@@ -245,7 +248,7 @@ function buildEmoteActions(): AvatarAction[] {
     name: def.name,
     tag: key.toUpperCase(),
     description: def.description,
-    duration: key === "sleep" ? "continuous" : key === "blink" ? "150ms" : "~2.6s",
+    duration: key === "sleep" ? "continuous" : key === "blink" ? "150ms" : key === "spin" ? "2-10s (stackable)" : "~2.6s",
     constraints: def.constraints,
     aiVisible: def.aiVisible,
   }));

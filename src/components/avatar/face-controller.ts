@@ -657,6 +657,125 @@ class SleepState implements AnimationState {
   }
 }
 
+// ─── SpinState (stackable — consecutive spins = faster & longer) ─────
+
+const SPIN_BASE_VELOCITY = 4 * Math.PI; // 2 rev/s initial
+const SPIN_BOOST_VELOCITY = 3 * Math.PI; // +1.5 rev/s per boost
+const SPIN_BASE_DURATION = 2.0;
+const SPIN_BOOST_DURATION = 2.0; // +2s per boost
+const SPIN_MAX_TIME_LEFT = 10.0;
+const SPIN_STOP_DURATION = 0.5; // deceleration ramp
+
+type SpinPhase = "spinning" | "stopping";
+
+class SpinState implements AnimationState {
+  readonly name = "spin";
+  readonly controlsEyes = true;
+
+  private entryQuat = new THREE.Quaternion();
+  private angle = 0; // accumulated radians
+  private angularVelocity = 0;
+  private timeLeft = 0;
+  private level = 0;
+  private phase: SpinPhase = "spinning";
+  private stopElapsed = 0;
+  private stopVelocity = 0;
+
+  enter(currentPose: FacePose): void {
+    this.entryQuat.copy(currentPose.headQuat);
+    this.angle = 0;
+    this.angularVelocity = SPIN_BASE_VELOCITY;
+    this.timeLeft = SPIN_BASE_DURATION;
+    this.level = 0;
+    this.phase = "spinning";
+    this.stopElapsed = 0;
+  }
+
+  /** Stack another spin — more speed, more time */
+  boost(): void {
+    this.level++;
+    this.angularVelocity += SPIN_BOOST_VELOCITY;
+    this.timeLeft = Math.min(
+      this.timeLeft + SPIN_BOOST_DURATION,
+      SPIN_MAX_TIME_LEFT,
+    );
+    this.phase = "spinning"; // cancel deceleration if stopping
+  }
+
+  update(
+    _dt: number,
+    _elapsed: number,
+    outPose: FacePose,
+  ): TransitionRequest | null {
+    const dt = Math.min(_dt, 0.1);
+
+    if (this.phase === "spinning") {
+      this.angle += this.angularVelocity * dt;
+      this.timeLeft -= dt;
+
+      if (this.timeLeft <= 0) {
+        this.phase = "stopping";
+        this.stopElapsed = 0;
+        this.stopVelocity = this.angularVelocity;
+      }
+    } else {
+      // Decelerate to a stop
+      this.stopElapsed += dt;
+      const t = Math.min(this.stopElapsed / SPIN_STOP_DURATION, 1);
+      const speedMult = 1 - easeInQuad(t);
+      this.angle += this.stopVelocity * speedMult * dt;
+
+      if (t >= 1) {
+        outPose.headQuat.copy(this.entryQuat);
+        resetExpression(outPose);
+        return { nextState: "idle", blendOut: 0.3 };
+      }
+    }
+
+    // Apply rotation
+    _qA.setFromAxisAngle(_axisY, this.angle);
+    outPose.headQuat.copy(this.entryQuat).multiply(_qA);
+
+    // Evolving expression — gets wilder at higher levels
+    if (this.level <= 0) {
+      outPose.leftEyeText = "@";
+      outPose.rightEyeText = "@";
+      outPose.mouthText = "○";
+    } else if (this.level === 1) {
+      outPose.leftEyeText = "@";
+      outPose.rightEyeText = "@";
+      outPose.mouthText = "Д";
+    } else if (this.level === 2) {
+      outPose.leftEyeText = "×";
+      outPose.rightEyeText = "×";
+      outPose.mouthText = "○";
+    } else {
+      // Transcended
+      outPose.leftEyeText = "★";
+      outPose.rightEyeText = "★";
+      outPose.mouthText = "▽";
+    }
+
+    outPose.leftLidOpen = LID_OPEN;
+    outPose.rightLidOpen = LID_OPEN;
+    outPose.leftBrowAngle = 0;
+    outPose.rightBrowAngle = 0;
+    outPose.leftBrowY = 0;
+    outPose.rightBrowY = 0;
+    outPose.mouthCurve = 0;
+    outPose.mouthOpen = 0;
+    outPose.mouthWidth = 1;
+    outPose.leftPupilOffset.set(0, 0);
+    outPose.rightPupilOffset.set(0, 0);
+    outPose.leftPupilScale = 1;
+    outPose.rightPupilScale = 1;
+
+    return null;
+  }
+
+  exit(): void {}
+}
+
 // ─── Text Expression System ─────────────────────────────────────────
 
 interface TextExpression {
@@ -963,6 +1082,7 @@ export class FaceController {
   private blinkEmoteState = new BlinkEmoteState();
   private sleepState = new SleepState();
   private expressionEmoteState = new ExpressionEmoteState();
+  private spinState = new SpinState();
 
   // Active state
   private activeState: AnimationState = this.idleState;
@@ -1068,6 +1188,15 @@ export class FaceController {
       return;
     }
 
+    if (command === "spin") {
+      if (this.activeState === this.spinState) {
+        this.spinState.boost();
+      } else {
+        this.transitionTo(this.spinState, 0.15);
+      }
+      return;
+    }
+
     // Text expression emotes — any key in TEXT_EXPRESSIONS
     if (command in TEXT_EXPRESSIONS) {
       this.expressionEmoteState.setExpression(command);
@@ -1122,7 +1251,8 @@ export class FaceController {
         this.activeState === this.winkState ||
         this.activeState === this.blinkEmoteState ||
         this.activeState === this.sleepState ||
-        this.activeState === this.expressionEmoteState;
+        this.activeState === this.expressionEmoteState ||
+        this.activeState === this.spinState;
 
       this.transitionToIdle(request.blendOut);
 
