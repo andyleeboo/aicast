@@ -271,7 +271,7 @@ export function ChatPanel({
           ))}
           {messages.length === 0 && (
             <div className="text-center text-xs text-muted/60 py-8">
-              Chat's empty — be the first to say something
+              Chat&apos;s empty — be the first to say something
             </div>
           )}
         </div>

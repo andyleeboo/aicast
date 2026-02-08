@@ -14,22 +14,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AICast — 세계 최초 AI 스트리머",
+  metadataBase: new URL("https://aicast.vercel.app"),
+  title: "AICast — The World's First AI Streamer",
   description:
-    "Bob이 라이브 중! AI가 직접 방송하고, 채팅하고, 말합니다. 지금 들어오세요.",
+    "Bob is LIVE! An AI that streams, chats, and talks — just like a real Twitch streamer. Powered by Gemini 3.",
   openGraph: {
-    title: "AICast — 세계 최초 AI 스트리머",
+    title: "AICast — The World's First AI Streamer",
     description:
-      "Bob이 라이브 중! AI가 직접 방송하고, 채팅하고, 말합니다. 지금 들어오세요.",
-    images: [{ url: "/og-bob.png", width: 1200, height: 630, alt: "Bob — AI 스트리머" }],
+      "Bob is LIVE! An AI that streams, chats, and talks — just like a real Twitch streamer. Powered by Gemini 3.",
+    images: [{ url: "/og-bob.png", width: 1200, height: 630, alt: "Bob — AI Streamer" }],
     type: "website",
     siteName: "AICast",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AICast — 세계 최초 AI 스트리머",
+    title: "AICast — The World's First AI Streamer",
     description:
-      "Bob이 라이브 중! AI가 직접 방송하고, 채팅하고, 말합니다. 지금 들어오세요.",
+      "Bob is LIVE! An AI that streams, chats, and talks — just like a real Twitch streamer. Powered by Gemini 3.",
     images: ["/og-bob.png"],
   },
 };

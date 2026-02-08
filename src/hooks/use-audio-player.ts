@@ -100,7 +100,9 @@ export function useAudioPlayer(options?: UseAudioPlayerOptions) {
   }, [getContext]);
 
   // Keep the ref in sync so the onended callback always calls the latest version
-  playNextRef.current = playNext;
+  useEffect(() => {
+    playNextRef.current = playNext;
+  }, [playNext]);
 
   /** Add a base64 PCM chunk to the playback queue. Starts playback if not already playing. */
   const enqueue = useCallback(

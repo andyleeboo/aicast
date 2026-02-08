@@ -46,13 +46,6 @@ for (const skill of PERFORMANCE_SKILLS) {
   tagToSkill[skill.tag] = skill.id;
 }
 
-// All known tags — used to strip stray tags embedded mid-response
-const knownTags = new Set([
-  ...Object.keys(tagToGesture),
-  ...Object.keys(tagToEmote),
-  ...Object.keys(tagToSkill),
-]);
-
 export function parseTags(raw: string) {
   // Strip leading junk (thinking artifacts like "_\n", "}\n", whitespace)
   let remaining = raw.replace(/^[\s_{}*#]+/, "");

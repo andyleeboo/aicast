@@ -18,6 +18,15 @@ Built with **Google Gemini 3** for the [Gemini 3 Hackathon](https://gemini3.devp
 4. **AI responds** — the streamer reads the batch, picks messages to engage with, and responds while the 3D avatar performs gestures and emotes
 5. **Keep chatting** — input is never locked; you can keep typing while the AI is responding
 
+### Slash Commands
+
+Type these in chat to trigger avatar emotes:
+
+- `/wink` — Bob winks
+- `/blink` — rapid blink emote
+- `/sleep` — Bob falls asleep
+- `/wake` — wake Bob up
+
 ## Gemini 3 Integration
 
 AICast uses **`gemini-3-flash-preview`** as the core AI engine powering live streamer conversations.
@@ -27,7 +36,8 @@ AICast uses **`gemini-3-flash-preview`** as the core AI engine powering live str
 - **Streamer personality** — each AI streamer has a rich system prompt defining their character, humor style, and show format. Gemini 3 maintains this persona across the entire conversation.
 - **Batch chat processing** — instead of responding to one message at a time, the AI receives batched chat messages formatted as `Username: message` and decides which to engage with, which to joke about, and when to acknowledge trends — mimicking how real streamers interact with chat.
 - **Avatar action tags** — the system prompt instructs Gemini 3 to prefix responses with gesture/emote tags (`[NOD]`, `[SHAKE]`, `[TILT]`, `[WINK]`, `[BLINK]`, `[SLEEP]`). The server parses these tags and drives the 3D avatar's animations, creating a physical embodiment of the AI's reactions.
-- **Priority-aware responses** — the batch system supports message priority levels (normal, highlighted, donation). Gemini 3 is instructed to always acknowledge donations and prioritize highlighted messages, enabling future monetization features.
+- **Text-to-Speech** — Gemini 2.5 Pro TTS generates Bob's voice in real time, with automatic fallback to Gemini 2.5 Flash TTS and then browser Web Speech API.
+- **Priority-aware responses** — the batch system supports message priority levels (normal, highlighted, donation). Gemini 3 is instructed to always acknowledge donations and prioritize highlighted messages.
 
 ## Tech Stack
 
@@ -35,8 +45,12 @@ AICast uses **`gemini-3-flash-preview`** as the core AI engine powering live str
 |-------|------|
 | Framework | Next.js 16 (App Router) + TypeScript |
 | Styling | Tailwind CSS v4 |
-| AI | Google Gemini 3 Flash (`@google/genai`) |
+| AI Chat | Google Gemini 3 Flash (`@google/genai`) |
+| TTS | Gemini 2.5 Pro TTS → Flash TTS → Web Speech API |
 | 3D Avatar | React Three Fiber + Three.js |
+| Database | Supabase (auth + chat persistence) |
+| Monitoring | Sentry (errors + session replay) |
+| Analytics | Firebase Analytics |
 | Deployment | Vercel |
 
 ## Architecture
@@ -56,12 +70,15 @@ Viewer (Browser)
   │                                              │   - Compose system prompt  │
   │                                              │   - Call Gemini 3 Flash    │
   │                                              │   - Parse gesture/emote    │
+  │                                              │   - Stream TTS audio       │
   │                                              └─────────────┬──────────────┘
   │                                                            │
-  │◄──── { response, gesture, emote } ─────────────────────────┘
+  │◄──── SSE: ai-response + ai-audio-chunk ────────────────────┘
   │
   ├─ AvatarCanvas ── HeadScene ── FaceController (state machine)
   │     Gesture/emote tags drive avatar animations
+  │
+  ├─ AudioPlayer ── streams PCM audio chunks for Bob's voice
   │
   └─ Speech bubble overlay shows AI response text
 ```
@@ -73,12 +90,20 @@ The avatar is a procedural 3D head (no external models) driven by a **state mach
 - **IdleState** — procedural head wander
 - **GestureState** — quaternion keyframe playback (nod, shake, tilt)
 - **WinkState / BlinkEmoteState / SleepState** — emote animations
+- **PerformanceSkills** — dramatic camera/scale effects (14+ skills)
 - Crossfade blending between states for smooth transitions
-- Gesture data loaded from JSON keyframe files
+
+### TTS Provider Chain
+
+Audio generation uses a fallback chain for reliability:
+
+1. **Gemini 2.5 Pro TTS** — highest quality (~5s latency)
+2. **Gemini 2.5 Flash TTS** — lower latency fallback
+3. **Web Speech API** — browser-native, zero-cost, always available
 
 ### Avatar Remote Control
 
-REST API at `/api/avatar/actions` + SSE event stream at `/api/avatar/events` allows external control of the avatar — useful for future integrations and debugging.
+REST API at `/api/avatar/actions` + SSE event stream at `/api/avatar/events` allows external control of the avatar.
 
 ## Current Channel
 
@@ -87,19 +112,24 @@ REST API at `/api/avatar/actions` + SSE event stream at `/api/avatar/events` all
 ## Development
 
 ```bash
-yarn install    # Install dependencies
-yarn dev        # Start dev server at localhost:3000
-yarn build      # Production build
-yarn lint       # ESLint
+bun install    # Install dependencies
+bun dev        # Start dev server at localhost:3000
+bun run build  # Production build
+bun lint       # ESLint
 ```
 
 ## Environment Variables
 
 ```env
-GEMINI_API_KEY=     # Google AI Studio API key (required)
+GEMINI_API_KEY=                          # Google AI Studio API key (required)
+NEXT_PUBLIC_SUPABASE_URL=                # Supabase project URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=    # Supabase publishable key
+SENTRY_DSN=                              # Sentry DSN (server/edge)
+NEXT_PUBLIC_SENTRY_DSN=                  # Sentry DSN (browser, same value)
+SENTRY_AUTH_TOKEN=                       # Sentry auth token (CI/production only)
 ```
 
-Get your API key at [Google AI Studio](https://aistudio.google.com/apikey).
+Get your Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey).
 
 ## License
 

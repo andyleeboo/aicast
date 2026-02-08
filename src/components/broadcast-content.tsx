@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, startTransition } from "react";
 import { AvatarCanvas } from "./avatar/avatar-canvas";
 import { ChatPanel } from "./chat-panel";
 import { UsernameModal } from "./username-modal";
@@ -33,7 +33,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   // Hydrate from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
     const stored = localStorage.getItem(USERNAME_KEY);
-    setUsername(stored); // null if not found, string if found
+    // Use startTransition to avoid React Compiler cascading-render warning
+    startTransition(() => setUsername(stored));
   }, []);
   const speechTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 
 const POLL_INTERVAL = 15_000;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function useViewerCount(_channelId: string): number {
   const [count, setCount] = useState(0);
 
