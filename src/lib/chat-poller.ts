@@ -41,13 +41,26 @@ function getState(): PollerState {
   return g[GLOBAL_KEY];
 }
 
+let pollCount = 0;
+
 async function pollForMessages() {
+  pollCount++;
+  // Log every 10th poll to avoid spam but confirm the interval is firing
+  if (pollCount % 10 === 1) {
+    console.log(`[chat-poller] Poll #${pollCount}`);
+  }
+
   // Don't overlap with proactive speech or another poll cycle
-  if (!acquireProcessingLock()) return;
+  if (!acquireProcessingLock()) {
+    return;
+  }
 
   try {
     const supabase = createServerSupabaseClient();
-    if (!supabase) return;
+    if (!supabase) {
+      console.warn("[chat-poller] No Supabase client");
+      return;
+    }
 
     const state = getState();
     const { data, error } = await supabase
