@@ -21,6 +21,11 @@ const DEFAULT_CHAT_WIDTH = 380;
 const MIN_CHAT_WIDTH = 200;
 const MAX_CHAT_RATIO = 0.6; // chat can grow up to 60% of viewport width
 
+const AVATAR_HEIGHT_KEY = "aicast_avatar_height";
+const DEFAULT_AVATAR_HEIGHT = 250;
+const MIN_AVATAR_HEIGHT = 120;
+const MAX_AVATAR_RATIO = 0.65; // avatar can take up to 65% of viewport height
+
 export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [gesture, setGesture] = useState<GestureReaction | null>(null);
   const [emote, setEmote] = useState<{ command: EmoteCommand; key: number } | null>(null);
@@ -33,19 +38,27 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   // undefined = not loaded yet, null = no username stored
   const [username, setUsername] = useState<string | null | undefined>(undefined);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_WIDTH);
+  const [avatarHeight, setAvatarHeight] = useState(DEFAULT_AVATAR_HEIGHT);
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
+  const dragStartY = useRef(0);
+  const dragStartHeight = useRef(0);
 
   // Hydrate from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
     const stored = localStorage.getItem(USERNAME_KEY);
     const storedWidth = localStorage.getItem(CHAT_WIDTH_KEY);
+    const storedHeight = localStorage.getItem(AVATAR_HEIGHT_KEY);
     startTransition(() => {
       setUsername(stored);
       if (storedWidth) {
         const w = Number(storedWidth);
         if (w >= MIN_CHAT_WIDTH && w <= window.innerWidth * MAX_CHAT_RATIO) setChatWidth(w);
+      }
+      if (storedHeight) {
+        const h = Number(storedHeight);
+        if (h >= MIN_AVATAR_HEIGHT && h <= window.innerHeight * MAX_AVATAR_RATIO) setAvatarHeight(h);
       }
     });
   }, []);
@@ -354,38 +367,70 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     return () => es.close();
   }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill]);
 
-  // --- Draggable divider logic (desktop only) ---
+  // --- Draggable divider logic (mobile: vertical, desktop: horizontal) ---
   const [dragging, setDragging] = useState(false);
   const chatWidthRef = useRef(chatWidth);
   useEffect(() => { chatWidthRef.current = chatWidth; });
+  const avatarHeightRef = useRef(avatarHeight);
+  useEffect(() => { avatarHeightRef.current = avatarHeight; });
 
   const handleDividerPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     isDragging.current = true;
-    dragStartX.current = e.clientX;
-    dragStartWidth.current = chatWidthRef.current;
     setDragging(true);
-    document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
-    const maxW = Math.floor(window.innerWidth * MAX_CHAT_RATIO);
-    const clamp = (v: number) => Math.min(maxW, Math.max(MIN_CHAT_WIDTH, v));
+    const isDesktop = window.innerWidth >= 1024;
 
-    const onMove = (ev: PointerEvent) => {
-      setChatWidth(clamp(dragStartWidth.current - (ev.clientX - dragStartX.current)));
-    };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      isDragging.current = false;
-      setDragging(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      const finalW = clamp(dragStartWidth.current - (ev.clientX - dragStartX.current));
-      localStorage.setItem(CHAT_WIDTH_KEY, String(finalW));
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    if (isDesktop) {
+      // Desktop: drag left/right to resize chat width
+      dragStartX.current = e.clientX;
+      dragStartWidth.current = chatWidthRef.current;
+      document.body.style.cursor = "col-resize";
+
+      const maxW = Math.floor(window.innerWidth * MAX_CHAT_RATIO);
+      const clamp = (v: number) => Math.min(maxW, Math.max(MIN_CHAT_WIDTH, v));
+
+      const onMove = (ev: PointerEvent) => {
+        setChatWidth(clamp(dragStartWidth.current - (ev.clientX - dragStartX.current)));
+      };
+      const onUp = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        isDragging.current = false;
+        setDragging(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        const finalW = clamp(dragStartWidth.current - (ev.clientX - dragStartX.current));
+        localStorage.setItem(CHAT_WIDTH_KEY, String(finalW));
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    } else {
+      // Mobile: drag up/down to resize avatar height
+      dragStartY.current = e.clientY;
+      dragStartHeight.current = avatarHeightRef.current;
+      document.body.style.cursor = "row-resize";
+
+      const maxH = Math.floor(window.innerHeight * MAX_AVATAR_RATIO);
+      const clamp = (v: number) => Math.min(maxH, Math.max(MIN_AVATAR_HEIGHT, v));
+
+      const onMove = (ev: PointerEvent) => {
+        setAvatarHeight(clamp(dragStartHeight.current + (ev.clientY - dragStartY.current)));
+      };
+      const onUp = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        isDragging.current = false;
+        setDragging(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        const finalH = clamp(dragStartHeight.current + (ev.clientY - dragStartY.current));
+        localStorage.setItem(AVATAR_HEIGHT_KEY, String(finalH));
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    }
   }, []);
 
   return (
@@ -393,8 +438,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       {/* Username modal — only after localStorage has been checked */}
       {username === null && <UsernameModal onConfirm={handleUsernameConfirm} />}
 
-      {/* Stream area — fixed height on mobile so keyboard only shrinks chat */}
-      <div className="relative flex h-[250px] shrink-0 flex-col sm:h-[350px] lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink">
+      {/* Stream area — adjustable height on mobile, fills remaining space on desktop */}
+      <div
+        className="relative flex h-[var(--avatar-h)] shrink-0 flex-col lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink"
+        style={{ "--avatar-h": `${avatarHeight}px` } as React.CSSProperties}
+      >
         {/* 3D Avatar */}
         <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
           <AvatarCanvas
@@ -482,14 +530,22 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         </div>
       </div>
 
-      {/* Draggable divider — desktop only. Outer div is the wide grab zone (20px),
-           inner div is the visible 2px line. touch-action:none prevents browser gestures. */}
+      {/* Draggable divider — horizontal on mobile, vertical on desktop.
+           Outer div is the wide grab zone (20px), inner div is the visible 2px line.
+           touch-action:none prevents browser gestures on touch screens. */}
       <div
-        className="hidden shrink-0 cursor-col-resize items-center justify-center lg:flex"
-        style={{ width: 20, marginLeft: -6, marginRight: -6, zIndex: 10, touchAction: "none" }}
+        className="z-10 flex shrink-0 cursor-row-resize items-center justify-center lg:cursor-col-resize"
+        style={{ touchAction: "none" }}
         onPointerDown={handleDividerPointerDown}
       >
-        <div className={`h-full w-0.5 transition-colors ${dragging ? "bg-accent" : "bg-border hover:bg-muted"}`} />
+        {/* Mobile: horizontal grab zone (20px tall, full width) */}
+        <div className="flex h-5 w-full -my-2 items-center justify-center lg:hidden">
+          <div className={`h-0.5 w-10 rounded-full transition-colors ${dragging ? "bg-accent" : "bg-border hover:bg-muted"}`} />
+        </div>
+        {/* Desktop: vertical grab zone (20px wide, full height) */}
+        <div className="hidden h-full w-5 -mx-1.5 items-center justify-center lg:flex">
+          <div className={`h-full w-0.5 transition-colors ${dragging ? "bg-accent" : "bg-border hover:bg-muted"}`} />
+        </div>
       </div>
 
       {/* Chat — on mobile flex-1 fills the column; on desktop lg:flex-none + width pins it */}

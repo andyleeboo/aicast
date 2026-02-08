@@ -239,8 +239,8 @@ export function ChatPanel({
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      {/* Header — hidden on mobile to save vertical space */}
+      <div className="hidden items-center justify-between border-b border-border px-4 py-3 lg:flex">
         <h2 className="text-sm font-semibold">The Lobby</h2>
         <span className="text-xs text-muted">
           {messages.length} messages
