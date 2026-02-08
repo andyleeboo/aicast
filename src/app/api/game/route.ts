@@ -3,8 +3,10 @@ import {
   startGame,
   guess,
   endGame,
+  getActiveGame,
   getActiveGameClientState,
 } from "@/lib/games/game-manager";
+import { triggerGameReaction } from "@/lib/games/game-reactions";
 
 export async function GET() {
   const state = getActiveGameClientState();
@@ -24,6 +26,9 @@ export async function POST(req: NextRequest) {
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+    // Bob announces the new game
+    const gameState = getActiveGame();
+    if (gameState) triggerGameReaction(gameState).catch(console.error);
     return NextResponse.json({ state: result });
   }
 
@@ -35,11 +40,19 @@ export async function POST(req: NextRequest) {
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+    // Bob reacts to win/loss
+    if (result.state.status !== "playing") {
+      const gameState = getActiveGame();
+      if (gameState) triggerGameReaction(gameState).catch(console.error);
+    }
     return NextResponse.json({ correct: result.correct, state: result.state });
   }
 
   if (action === "stop") {
+    const gameState = getActiveGame();
     endGame();
+    // Bob reacts to forced end
+    if (gameState) triggerGameReaction({ ...gameState, status: "lost" }).catch(console.error);
     return NextResponse.json({ ok: true });
   }
 
