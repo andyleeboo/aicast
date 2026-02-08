@@ -136,9 +136,19 @@ export function releaseProcessingLock(): void {
 /**
  * Directly flush the queue. Called from Next.js after() to ensure the
  * batch processes even when Vercel freezes timers after the response.
+ *
+ * Force-clears the processing lock first — on Vercel a previous invocation
+ * may have been killed mid-flush, leaving the lock permanently stuck.
  */
 export async function waitForFlush(): Promise<void> {
-  console.log("[chat-queue] after() triggered — flushing directly");
+  const state = getState();
+  console.log("[chat-queue] after() triggered — flushing directly", {
+    queueLen: state.queue.length,
+    processing: state.processing,
+  });
+  // Force-clear stale lock from a previously killed invocation
+  state.processing = false;
+  clearTimers(state);
   await flushQueue();
 }
 
