@@ -10,6 +10,9 @@
   --accent-hover: #772ce8;
   --muted: #adadb8;
   --live: #eb0400;
+  --donation-blue: #1e88e5;
+  --donation-gold: #f9a825;
+  --donation-red: #e53935;
 }
 
 @theme inline {
@@ -22,6 +25,9 @@
   --color-accent-hover: var(--accent-hover);
   --color-muted: var(--muted);
   --color-live: var(--live);
+  --color-donation-blue: var(--donation-blue);
+  --color-donation-gold: var(--donation-gold);
+  --color-donation-red: var(--donation-red);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -47,4 +53,14 @@ body {
 *::-webkit-scrollbar-thumb {
   background-color: var(--border);
   border-radius: 3px;
+}
+
+@keyframes confetti-pop {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 1; }
+  100% { transform: translateY(var(--confetti-y)) translateX(var(--confetti-x)) scale(0.3); opacity: 0; }
+}
+
+@keyframes donation-glow {
+  0%, 100% { box-shadow: 0 0 4px var(--donation-red); }
+  50% { box-shadow: 0 0 16px var(--donation-red), 0 0 32px color-mix(in srgb, var(--donation-red), transparent 60%); }
 }

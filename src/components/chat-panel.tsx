@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { validateMessage } from "@/lib/moderation";
 import { dbRowToChatMessage } from "@/lib/types";
 import { trackEvent } from "@/lib/firebase";
+import { SuperChatSelector } from "./superchat-selector";
+import { CoinConfetti } from "./confetti";
 import type {
   ChatMessage,
   MessageRow,
   GestureReaction,
   EmoteCommand,
+  DonationTier,
 } from "@/lib/types";
 
 const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureReaction; msg: string }> = {
@@ -49,6 +52,81 @@ const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureRe
   "/spin":       { emote: "spin",          msg: "{name} spins around!" },
 };
 
+const TIER_COSTS: Record<DonationTier, number> = { blue: 2, gold: 10, red: 50 };
+const TIER_ICONS: Record<DonationTier, string> = { blue: "\u{1F48E}", gold: "\u{1F3C6}", red: "\u{1F525}" };
+const COINS_KEY = "aicast_coins";
+const DEFAULT_COINS = 100;
+
+function getInitialCoins(): number {
+  if (typeof window === "undefined") return DEFAULT_COINS;
+  const stored = localStorage.getItem(COINS_KEY);
+  return stored ? Number(stored) : DEFAULT_COINS;
+}
+
+function useCoinBalance() {
+  const [coins, setCoins] = useState(getInitialCoins);
+  const spend = useCallback((amount: number) => {
+    setCoins((prev) => {
+      const next = prev - amount;
+      localStorage.setItem(COINS_KEY, String(next));
+      return next;
+    });
+  }, []);
+  return { coins, spend };
+}
+
+interface PinnedDonation {
+  id: string;
+  username: string;
+  content: string;
+  tier: DonationTier;
+  amount: number;
+  expiresAt: number;
+}
+
+function usePinnedDonations() {
+  const [pins, setPins] = useState<PinnedDonation[]>([]);
+  const addPin = useCallback((donation: Omit<PinnedDonation, "expiresAt">) => {
+    const duration = donation.tier === "red" ? 60_000 : 30_000;
+    setPins((prev) => [...prev, { ...donation, expiresAt: Date.now() + duration }]);
+  }, []);
+  useEffect(() => {
+    const t = setInterval(() => setPins((p) => p.filter((d) => d.expiresAt > Date.now())), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return { pins, addPin };
+}
+
+export interface DonationEvent {
+  id: string;
+  donationTier: DonationTier;
+  donationAmount: number;
+  donationUsername: string;
+  donationContent: string;
+}
+
+function getDonationStyle(tier: DonationTier) {
+  switch (tier) {
+    case "blue":
+      return "border-l-2 border-donation-blue bg-donation-blue/10 pl-2 rounded-r";
+    case "gold":
+      return "border-l-2 border-donation-gold bg-donation-gold/10 pl-2 rounded-r";
+    case "red":
+      return "border-l-2 border-donation-red bg-donation-red/10 pl-2 rounded-r animate-[donation-glow_2s_ease-in-out_infinite]";
+  }
+}
+
+function getPinStyle(tier: DonationTier) {
+  switch (tier) {
+    case "gold":
+      return "border-donation-gold bg-donation-gold/15 text-donation-gold";
+    case "red":
+      return "border-donation-red bg-donation-red/15 text-donation-red";
+    default:
+      return "";
+  }
+}
+
 export function ChatPanel({
   channelId,
   streamerName,
@@ -56,6 +134,7 @@ export function ChatPanel({
   onEmote,
   onGesture,
   onUserInteraction,
+  donations,
 }: {
   channelId: string;
   streamerName: string;
@@ -63,12 +142,20 @@ export function ChatPanel({
   onEmote?: (emote: EmoteCommand) => void;
   onGesture?: (gesture: GestureReaction) => void;
   onUserInteraction?: () => void;
+  donations?: DonationEvent[];
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showSelector, setShowSelector] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<DonationTier | null>(null);
+  const [confettiMsgs, setConfettiMsgs] = useState<Set<string>>(new Set());
 
+  const { coins, spend } = useCoinBalance();
+  const { pins, addPin } = usePinnedDonations();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const selectorRef = useRef<HTMLDivElement>(null);
+  const [lastDonationCount, setLastDonationCount] = useState(0);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -78,6 +165,61 @@ export function ChatPanel({
     });
   }, [messages]);
 
+  // Handle SSE donation events from other viewers
+  const donationLen = donations?.length ?? 0;
+  useEffect(() => {
+    if (!donations || donationLen <= lastDonationCount) return;
+    const newDonations = donations.slice(lastDonationCount);
+    setLastDonationCount(donationLen);
+
+    for (const latest of newDonations) {
+      // Add to messages (skip if already present from optimistic add)
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === latest.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: latest.id,
+            role: "user" as const,
+            content: latest.donationContent,
+            username: latest.donationUsername,
+            timestamp: Date.now(),
+            donationTier: latest.donationTier,
+            donationAmount: latest.donationAmount,
+          },
+        ];
+      });
+
+      // Pin Gold/Red
+      if (latest.donationTier === "gold" || latest.donationTier === "red") {
+        addPin({
+          id: latest.id,
+          username: latest.donationUsername,
+          content: latest.donationContent,
+          tier: latest.donationTier,
+          amount: latest.donationAmount,
+        });
+      }
+
+      // Trigger confetti
+      setConfettiMsgs((prev) => new Set(prev).add(latest.id));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donationLen]);
+
+  // Close selector when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
+        setShowSelector(false);
+      }
+    }
+    if (showSelector) {
+      document.addEventListener("mousedown", handleClick);
+      return () => document.removeEventListener("mousedown", handleClick);
+    }
+  }, [showSelector]);
+
   // Load initial messages, subscribe to Realtime, and poll as fallback
   useEffect(() => {
     let mounted = true;
@@ -85,7 +227,6 @@ export function ChatPanel({
     if (!sb) return;
     const supabase = sb;
 
-    // Merge new rows into state, deduplicating by ID and optimistic matches
     function mergeMessages(incoming: MessageRow[]) {
       const newMsgs = incoming
         .filter((r) => r.role === "user")
@@ -96,7 +237,6 @@ export function ChatPanel({
         let updated = prev;
         for (const msg of newMsgs) {
           if (updated.some((m) => m.id === msg.id)) continue;
-          // Skip optimistic duplicates
           if (
             updated.some(
               (m) =>
@@ -113,7 +253,6 @@ export function ChatPanel({
       });
     }
 
-    // Load last 50 messages from the past 3 hours
     async function loadMessages() {
       const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
@@ -132,7 +271,6 @@ export function ChatPanel({
 
     loadMessages();
 
-    // Realtime subscription (may not work with publishable keys)
     const channel = supabase
       .channel(`messages:${channelId}`)
       .on(
@@ -144,15 +282,11 @@ export function ChatPanel({
           filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
-          console.log("[realtime] INSERT received:", payload.new);
           mergeMessages([payload.new as MessageRow]);
         },
       )
-      .subscribe((status, err) => {
-        console.log("[realtime] Subscription status:", status, err ?? "");
-      });
+      .subscribe();
 
-    // Polling fallback — guarantees cross-device sync every 5s
     const poll = setInterval(async () => {
       const fiveSecondsAgo = new Date(Date.now() - 6_000).toISOString();
       const { data } = await supabase
@@ -181,7 +315,7 @@ export function ChatPanel({
     if (!text) return;
     onUserInteraction?.();
 
-    // Game commands — /hangman, /guess, /endgame
+    // Game commands
     const lower = text.toLowerCase();
     if (lower === "/hangman") {
       setInput("");
@@ -333,7 +467,7 @@ export function ChatPanel({
       return;
     }
 
-    // Check for slash commands — bypass API entirely
+    // Slash commands — bypass API
     const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
     if (slashCmd) {
       const systemMsg: ChatMessage = {
@@ -361,7 +495,41 @@ export function ChatPanel({
     setError(null);
     setInput("");
 
-    // Add user message to local state immediately (optimistic)
+    // Super Chat path
+    if (selectedTier) {
+      const tier = selectedTier;
+      const amount = TIER_COSTS[tier];
+      setSelectedTier(null);
+      spend(amount);
+
+      const msgId = crypto.randomUUID();
+      const userMsg: ChatMessage = {
+        id: msgId,
+        role: "user",
+        content: text,
+        username,
+        timestamp: Date.now(),
+        donationTier: tier,
+        donationAmount: amount,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setConfettiMsgs((prev) => new Set(prev).add(msgId));
+      trackEvent("superchat_sent", { tier, amount });
+
+      // Pin Gold/Red
+      if (tier === "gold" || tier === "red") {
+        addPin({ id: msgId, username, content: text, tier, amount });
+      }
+
+      fetch("/api/donation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, content: text, tier, channelId }),
+      }).catch(() => {});
+      return;
+    }
+
+    // Normal message path
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -372,15 +540,11 @@ export function ChatPanel({
     setMessages((prev) => [...prev, userMsg]);
     trackEvent("chat_message_sent");
 
-    // Fire-and-forget to server queue
     fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, content: text, channelId }),
-    }).catch(() => {
-      // Silently fail — user message is already shown optimistically
-      // and Supabase Realtime will sync if available
-    });
+    }).catch(() => {});
   }
 
   function formatTime(ts: number) {
@@ -390,26 +554,54 @@ export function ChatPanel({
     });
   }
 
+  function handleConfettiComplete(msgId: string) {
+    setConfettiMsgs((prev) => {
+      const next = new Set(prev);
+      next.delete(msgId);
+      return next;
+    });
+  }
+
   return (
     <div className="flex h-full flex-col bg-surface">
-      {/* Header — hidden on mobile to save vertical space */}
+      {/* Header */}
       <div className="hidden items-center justify-between border-b border-border px-4 py-3 lg:flex">
         <h2 className="text-sm font-semibold">The Lobby</h2>
         <span className="text-xs text-muted">
-          {messages.length} messages
+          {coins} coins
         </span>
       </div>
+
+      {/* Pinned donations */}
+      {pins.length > 0 && (
+        <div className="space-y-1 border-b border-border px-2 py-2">
+          {pins.map((pin) => (
+            <div
+              key={pin.id}
+              className={`rounded-lg border px-3 py-1.5 text-xs ${getPinStyle(pin.tier)}`}
+            >
+              <span className="font-semibold">{TIER_ICONS[pin.tier]} ${pin.amount} {pin.username}:</span>{" "}
+              {pin.content}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
         <div className="space-y-2">
           {messages.map((msg) => (
-            <div key={msg.id}>
+            <div key={msg.id} className="relative">
               {msg.role === "system" ? (
                 <span className="text-sm italic text-yellow-400">{msg.content}</span>
               ) : (
-                <>
+                <div className={msg.donationTier ? `py-1.5 ${getDonationStyle(msg.donationTier)}` : ""}>
                   <div className="flex items-baseline gap-1.5">
+                    {msg.donationTier && (
+                      <span className="text-xs">
+                        {TIER_ICONS[msg.donationTier]} ${msg.donationAmount}
+                      </span>
+                    )}
                     <span className="text-sm font-semibold text-green-400">
                       {msg.username || "Anon"}
                     </span>
@@ -418,7 +610,13 @@ export function ChatPanel({
                     </span>
                   </div>
                   <p className="text-sm leading-relaxed text-foreground/90">{msg.content}</p>
-                </>
+                </div>
+              )}
+              {confettiMsgs.has(msg.id) && msg.donationTier && (
+                <CoinConfetti
+                  tier={msg.donationTier}
+                  onComplete={() => handleConfettiComplete(msg.id)}
+                />
               )}
             </div>
           ))}
@@ -435,6 +633,23 @@ export function ChatPanel({
         {error && (
           <p className="mb-2 text-xs text-red-400">{error}</p>
         )}
+        {selectedTier && (
+          <div className="mb-2 flex items-center gap-2 text-xs">
+            <span className={`rounded px-2 py-0.5 font-semibold ${
+              selectedTier === "red" ? "bg-donation-red/20 text-donation-red"
+                : selectedTier === "gold" ? "bg-donation-gold/20 text-donation-gold"
+                : "bg-donation-blue/20 text-donation-blue"
+            }`}>
+              {TIER_ICONS[selectedTier]} ${TIER_COSTS[selectedTier]} Super Chat
+            </span>
+            <button
+              onClick={() => setSelectedTier(null)}
+              className="text-muted hover:text-foreground"
+            >
+              &times; cancel
+            </button>
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -446,9 +661,29 @@ export function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Say something..."
+            placeholder={selectedTier ? "Type your Super Chat message..." : "Say something..."}
             className="flex-1 rounded-lg bg-background px-3 py-2 text-base text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
           />
+          <div className="relative" ref={selectorRef}>
+            <button
+              type="button"
+              onClick={() => setShowSelector((v) => !v)}
+              className="rounded-lg bg-donation-gold/20 px-3 py-2 text-sm font-bold text-donation-gold transition-colors hover:bg-donation-gold/30"
+              title="Super Chat"
+            >
+              $
+            </button>
+            {showSelector && (
+              <SuperChatSelector
+                coins={coins}
+                onSelect={(tier) => {
+                  setSelectedTier(tier);
+                  setShowSelector(false);
+                }}
+                onClose={() => setShowSelector(false)}
+              />
+            )}
+          </div>
           <button
             type="submit"
             disabled={!input.trim()}

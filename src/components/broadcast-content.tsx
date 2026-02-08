@@ -10,7 +10,8 @@ import { useSpeechBubble } from "@/hooks/use-speech-bubble";
 import { getSkill } from "@/lib/avatar-actions";
 import { trackEvent } from "@/lib/firebase";
 import type { ScenePose } from "./avatar/face-controller";
-import type { Channel, GestureReaction, EmoteCommand } from "@/lib/types";
+import type { Channel, GestureReaction, EmoteCommand, DonationTier } from "@/lib/types";
+import type { DonationEvent } from "./chat-panel";
 import type { GameClientState } from "@/lib/games/game-types";
 
 interface BroadcastContentProps {
@@ -37,6 +38,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [scenePose, setScenePose] = useState<Partial<ScenePose> | null>(null);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [gameState, setGameState] = useState<GameClientState | null>(null);
+  const [donations, setDonations] = useState<DonationEvent[]>([]);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // undefined = not loaded yet, null = no username stored
@@ -268,6 +270,24 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     trackEvent("username_set");
   }
 
+  // Notification sound for Gold/Red donations (Web Audio API — no files needed)
+  const playDonationSound = useCallback((tier: DonationTier) => {
+    if (tier === "blue" || mutedRef.current) return;
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain).connect(ctx.destination);
+      osc.frequency.value = tier === "red" ? 880 : 660;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch {
+      // AudioContext may not be available
+    }
+  }, []);
+
   // Subscribe to SSE for remote-triggered actions and AI responses
   // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {
@@ -294,6 +314,20 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             handleEmote("wake");
             setMaintenanceMode(false);
           }
+          return;
+        }
+
+        if (data.type === "donation") {
+          const donationEvent: DonationEvent = {
+            id: data.id,
+            donationTier: data.donationTier as DonationTier,
+            donationAmount: data.donationAmount,
+            donationUsername: data.donationUsername,
+            donationContent: data.donationContent,
+          };
+          setDonations((prev) => [...prev, donationEvent]);
+          playDonationSound(donationEvent.donationTier);
+          trackEvent("donation_received", { tier: data.donationTier, amount: data.donationAmount });
           return;
         }
 
@@ -395,7 +429,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       es.close();
       if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
     };
-  }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill]);
+  }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill, playDonationSound]);
 
   // --- Draggable divider logic (mobile: vertical, desktop: horizontal) ---
   const [dragging, setDragging] = useState(false);
@@ -592,6 +626,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onEmote={handleEmote}
             onGesture={setGesture}
             onUserInteraction={handleUserInteraction}
+            donations={donations}
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-surface text-sm text-muted">
