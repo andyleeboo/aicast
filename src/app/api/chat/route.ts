@@ -8,6 +8,10 @@ import type { BatchedChatMessage } from "@/lib/types";
 // Side-effect: registers the flush handler that wires queue → Gemini → SSE broadcast
 import "@/lib/chat-queue-init";
 
+// Extend Vercel function timeout so after() has enough time for the
+// Gemini API call (default 10s is too short).
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { username, content, channelId } = body as {

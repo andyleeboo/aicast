@@ -31,6 +31,11 @@ export async function chat(
     contents = [{ role: "user" as const, parts: [{ text: "(No chat yet — start talking!)" }] }];
   }
 
+  // Gemini 2.5 requires the last content to be user role for generateContent
+  if (contents[contents.length - 1].role !== "user") {
+    contents.push({ role: "user" as const, parts: [{ text: "(continue)" }] });
+  }
+
   for (const model of CHAT_MODELS) {
     try {
       const response = await getClient().models.generateContent({
