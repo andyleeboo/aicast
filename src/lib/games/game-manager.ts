@@ -62,7 +62,7 @@ export function startGame(type: "hangman"): GameClientState | { error: string } 
   return clientState;
 }
 
-export function guess(value: string): { correct: boolean; state: GameClientState } | { error: string } {
+export function guess(value: string): { correct: boolean; state: GameClientState; endedGame?: GameState } | { error: string } {
   const mgr = getState();
   if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
     return { error: "No active game" };
@@ -80,23 +80,30 @@ export function guess(value: string): { correct: boolean; state: GameClientState
   const clientState = toClientState(result.state);
   emitGameState(clientState);
 
-  // Auto-end on win/loss
+  // Auto-end on win/loss: snapshot the game, then clear so other
+  // pathways (chat-queue-init, proactive-speech) don't re-inject the prompt
   if (result.state.status !== "playing") {
+    const endedGame = { ...result.state, data: { ...result.state.data } };
     mgr.lastEndedAt = Date.now();
+    mgr.activeGame = null;
+    return { correct: result.correct, state: clientState, endedGame };
   }
 
   return { correct: result.correct, state: clientState };
 }
 
-export function endGame(): void {
+export function endGame(): GameState | null {
   const state = getState();
   if (state.activeGame) {
     state.activeGame.status = "lost"; // force end
+    const snapshot = { ...state.activeGame, data: { ...state.activeGame.data } };
     const clientState = toClientState(state.activeGame);
     // Reveal the word on forced end
     clientState.data.maskedWord = [...state.activeGame.data.word];
     emitGameState(clientState);
     state.lastEndedAt = Date.now();
     state.activeGame = null;
+    return snapshot;
   }
+  return null;
 }

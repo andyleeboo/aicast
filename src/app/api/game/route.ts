@@ -40,19 +40,17 @@ export async function POST(req: NextRequest) {
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
-    // Bob reacts to win/loss
-    if (result.state.status !== "playing") {
-      const gameState = getActiveGame();
-      if (gameState) triggerGameReaction(gameState).catch(console.error);
+    // Bob reacts to win/loss (endedGame is a snapshot; activeGame is already cleared)
+    if (result.endedGame) {
+      triggerGameReaction(result.endedGame).catch(console.error);
     }
     return NextResponse.json({ correct: result.correct, state: result.state });
   }
 
   if (action === "stop") {
-    const gameState = getActiveGame();
-    endGame();
-    // Bob reacts to forced end
-    if (gameState) triggerGameReaction({ ...gameState, status: "lost" }).catch(console.error);
+    const endedGame = endGame();
+    // Bob reacts to forced end (endGame() returns snapshot with status: "lost")
+    if (endedGame) triggerGameReaction(endedGame).catch(console.error);
     return NextResponse.json({ ok: true });
   }
 
