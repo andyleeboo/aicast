@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { subscribe, touchViewer, removeViewer, type ActionEvent } from "@/lib/action-bus";
 import "@/lib/idle-behavior"; // Start Bob's idle expressions
 import "@/lib/proactive-speech"; // Start Bob's proactive monologues
+import "@/lib/chat-poller"; // Poll Supabase for new chat messages
 import { isShutdown } from "@/lib/service-config";
 
 export const dynamic = "force-dynamic";

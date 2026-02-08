@@ -124,11 +124,11 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
   return `[CHAT BATCH - ${batch.length} message(s)]\n${lines.join("\n")}`;
 }
 
-// ── Flush handler ────────────────────────────────────────────────────
+// ── Core batch processing (used by both flush handler and Supabase poller) ──
 
 const STREAMER_ID = "late-night-ai";
 
-setFlushHandler(async (batch: BatchedChatMessage[]) => {
+export async function processChatBatch(batch: BatchedChatMessage[]): Promise<void> {
   if (isShutdownSync()) {
     console.log("[chat-queue-init] Shutdown mode — skipping AI response");
     return;
@@ -207,6 +207,8 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     skillId,
   });
 
+  console.log(`[chat-queue-init] Bob responded to ${batch.length} message(s): ${response.substring(0, 80)}...`);
+
   // Step 2: Stream audio via Live API (non-blocking — audio plays while text is shown)
   streamSpeech(response, (chunk) => {
     emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
@@ -221,5 +223,8 @@ setFlushHandler(async (batch: BatchedChatMessage[]) => {
     .finally(() => {
       resumeIdle();
     });
+}
 
-});
+// Register as flush handler for backward compat (only works when caller
+// shares the same globalThis, e.g. within the SSE endpoint).
+setFlushHandler(processChatBatch);
