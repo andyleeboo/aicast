@@ -26,8 +26,13 @@ let lastPollAt = new Date().toISOString();
 const processedIds = new Set<string>();
 
 async function pollForMessages() {
+  console.log("[chat-poller] pollForMessages called");
+
   // Don't overlap with proactive speech or another poll cycle
-  if (!acquireProcessingLock()) return;
+  if (!acquireProcessingLock()) {
+    console.log("[chat-poller] Lock busy, skipping");
+    return;
+  }
 
   try {
     const supabase = createServerSupabaseClient();
