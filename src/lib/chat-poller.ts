@@ -19,11 +19,18 @@ const processedIds = new Set<string>();
 
 /** Check Supabase for new chat messages and process any found. */
 export async function checkForNewMessages(): Promise<void> {
-  if (!acquireProcessingLock()) return;
+  const lockAcquired = acquireProcessingLock();
+  if (!lockAcquired) {
+    console.log("[chat-poller] Lock held — skipping");
+    return;
+  }
 
   try {
     const supabase = createServerSupabaseClient();
-    if (!supabase) return;
+    if (!supabase) {
+      console.warn("[chat-poller] No Supabase client");
+      return;
+    }
 
     const { data, error } = await supabase
       .from("messages")
@@ -37,6 +44,7 @@ export async function checkForNewMessages(): Promise<void> {
       console.error("[chat-poller] Supabase error:", error.message);
       return;
     }
+    console.log(`[chat-poller] Poll: ${data?.length ?? 0} rows since ${lastPollAt}`);
     if (!data || data.length === 0) return;
 
     const newMessages = data.filter((row) => !processedIds.has(row.id));
