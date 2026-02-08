@@ -134,14 +134,11 @@ export function releaseProcessingLock(): void {
 }
 
 /**
- * Waits for the debounce window then explicitly flushes the queue.
- * Called from Next.js after() to ensure the batch processes even when
- * Vercel freezes the event loop after sending the HTTP response.
+ * Directly flush the queue. Called from Next.js after() to ensure the
+ * batch processes even when Vercel freezes timers after the response.
  */
 export async function waitForFlush(): Promise<void> {
-  // Wait for debounce window so additional messages can still batch
-  await new Promise((r) => setTimeout(r, DEBOUNCE_MS + 100));
-  // Explicitly flush — don't rely on the original setTimeout surviving
+  console.log("[chat-queue] after() triggered — flushing directly");
   await flushQueue();
 }
 
