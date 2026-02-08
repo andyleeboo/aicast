@@ -134,18 +134,15 @@ export function releaseProcessingLock(): void {
 }
 
 /**
- * Returns a promise that resolves once the queue is empty and not processing.
- * Used with Next.js after() to keep the serverless function alive on Vercel.
+ * Waits for the debounce window then explicitly flushes the queue.
+ * Called from Next.js after() to ensure the batch processes even when
+ * Vercel freezes the event loop after sending the HTTP response.
  */
 export async function waitForFlush(): Promise<void> {
-  const MAX_WAIT = 45_000; // safety cap
-  const POLL = 200;
-  const start = Date.now();
-  while (Date.now() - start < MAX_WAIT) {
-    const state = getState();
-    if (state.queue.length === 0 && !state.processing) return;
-    await new Promise((r) => setTimeout(r, POLL));
-  }
+  // Wait for debounce window so additional messages can still batch
+  await new Promise((r) => setTimeout(r, DEBOUNCE_MS + 100));
+  // Explicitly flush — don't rely on the original setTimeout surviving
+  await flushQueue();
 }
 
 export function getLastActivityTimestamp(): number {
