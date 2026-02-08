@@ -133,6 +133,21 @@ export function releaseProcessingLock(): void {
   }
 }
 
+/**
+ * Returns a promise that resolves once the queue is empty and not processing.
+ * Used with Next.js after() to keep the serverless function alive on Vercel.
+ */
+export async function waitForFlush(): Promise<void> {
+  const MAX_WAIT = 45_000; // safety cap
+  const POLL = 200;
+  const start = Date.now();
+  while (Date.now() - start < MAX_WAIT) {
+    const state = getState();
+    if (state.queue.length === 0 && !state.processing) return;
+    await new Promise((r) => setTimeout(r, POLL));
+  }
+}
+
 export function getLastActivityTimestamp(): number {
   return getState().lastActivityTimestamp;
 }

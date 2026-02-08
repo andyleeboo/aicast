@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { validateMessage } from "@/lib/moderation";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { pushMessage, pushHistory } from "@/lib/chat-queue";
+import { pushMessage, pushHistory, waitForFlush } from "@/lib/chat-queue";
 import type { BatchedChatMessage } from "@/lib/types";
 
 // Side-effect: registers the flush handler that wires queue → Gemini → SSE broadcast
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Push into server-side batch queue (will flush after 3s window)
+  // Push into server-side batch queue (will flush after debounce window)
   const batchMsg: BatchedChatMessage = {
     id: crypto.randomUUID(),
     username,
@@ -62,6 +63,11 @@ export async function POST(req: NextRequest) {
   } else {
     console.warn("[chat] No Supabase client — message not persisted");
   }
+
+  // Keep the serverless function alive until the batch queue flushes and
+  // the Gemini call completes. Without this, Vercel freezes the function
+  // after the response is sent, killing the setTimeout-based batch timer.
+  after(waitForFlush);
 
   return NextResponse.json({ ok: true });
 }
