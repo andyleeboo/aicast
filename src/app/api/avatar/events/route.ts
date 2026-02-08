@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { subscribe, touchViewer, removeViewer, type ActionEvent } from "@/lib/action-bus";
 import "@/lib/idle-behavior"; // Start Bob's idle expressions
 import "@/lib/proactive-speech"; // Start Bob's proactive monologues
-import "@/lib/chat-poller"; // Poll Supabase for new chat messages
+import { startChatPoller } from "@/lib/chat-poller";
 import { isShutdown } from "@/lib/service-config";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET() {
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | undefined;
   let keepalive: ReturnType<typeof setInterval> | undefined;
+  let stopPoller: (() => void) | undefined;
   let gracefulTimeout: ReturnType<typeof setTimeout> | undefined;
   const viewerId = crypto.randomUUID();
 
@@ -62,6 +63,9 @@ export async function GET() {
       touchViewer(viewerId);
 
       unsubscribe = subscribe(send);
+
+      // Start polling Supabase for new chat messages
+      stopPoller = startChatPoller();
 
       // Keepalive every 15s to stay under Vercel's timeout radar + refresh viewer
       keepalive = setInterval(async () => {
@@ -105,10 +109,12 @@ export async function GET() {
 
   function cleanup() {
     unsubscribe?.();
+    stopPoller?.();
     if (keepalive) clearInterval(keepalive);
     if (gracefulTimeout) clearTimeout(gracefulTimeout);
     removeViewer(viewerId);
     unsubscribe = undefined;
+    stopPoller = undefined;
     keepalive = undefined;
     gracefulTimeout = undefined;
   }

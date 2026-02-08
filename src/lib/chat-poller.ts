@@ -1,6 +1,6 @@
 /**
- * Side-effect module: polls Supabase for new user chat messages and
- * processes them inside the SSE endpoint's function context.
+ * Polls Supabase for new user chat messages and processes them inside
+ * the SSE endpoint's function context.
  *
  * On Vercel serverless, the POST /api/chat handler and the SSE endpoint
  * run in separate function invocations with separate globalThis. The
@@ -8,7 +8,7 @@
  * messages must be processed HERE (inside the SSE invocation) for
  * emitAction() to reach connected clients.
  *
- * Import this module from the SSE route to auto-start polling.
+ * Call `startChatPoller()` from the SSE stream's start() callback.
  */
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
@@ -21,53 +21,23 @@ import { processChatBatch } from "@/lib/chat-queue-init";
 import type { BatchedChatMessage } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 3_000;
-const GLOBAL_KEY = "__chatPollerState" as const;
 
-interface PollerState {
-  timer: ReturnType<typeof setInterval> | null;
-  lastPollAt: string; // ISO timestamp
-  processedIds: Set<string>;
-}
-
-function getState(): PollerState {
-  const g = globalThis as unknown as Record<string, PollerState>;
-  if (!g[GLOBAL_KEY]) {
-    g[GLOBAL_KEY] = {
-      timer: null,
-      lastPollAt: new Date().toISOString(),
-      processedIds: new Set(),
-    };
-  }
-  return g[GLOBAL_KEY];
-}
-
-let pollCount = 0;
+let lastPollAt = new Date().toISOString();
+const processedIds = new Set<string>();
 
 async function pollForMessages() {
-  pollCount++;
-  // Log every 10th poll to avoid spam but confirm the interval is firing
-  if (pollCount % 10 === 1) {
-    console.log(`[chat-poller] Poll #${pollCount}`);
-  }
-
   // Don't overlap with proactive speech or another poll cycle
-  if (!acquireProcessingLock()) {
-    return;
-  }
+  if (!acquireProcessingLock()) return;
 
   try {
     const supabase = createServerSupabaseClient();
-    if (!supabase) {
-      console.warn("[chat-poller] No Supabase client");
-      return;
-    }
+    if (!supabase) return;
 
-    const state = getState();
     const { data, error } = await supabase
       .from("messages")
       .select("*")
       .eq("role", "user")
-      .gt("created_at", state.lastPollAt)
+      .gt("created_at", lastPollAt)
       .order("created_at", { ascending: true })
       .limit(20);
 
@@ -78,19 +48,20 @@ async function pollForMessages() {
     if (!data || data.length === 0) return;
 
     // Deduplicate against previously processed messages
-    const newMessages = data.filter((row) => !state.processedIds.has(row.id));
+    const newMessages = data.filter((row) => !processedIds.has(row.id));
     if (newMessages.length === 0) return;
 
     // Update bookmark
-    state.lastPollAt = data[data.length - 1].created_at;
+    lastPollAt = data[data.length - 1].created_at;
     for (const row of newMessages) {
-      state.processedIds.add(row.id);
+      processedIds.add(row.id);
     }
 
-    // Keep dedup set bounded (last 200 IDs)
-    if (state.processedIds.size > 200) {
-      const arr = [...state.processedIds];
-      state.processedIds = new Set(arr.slice(-100));
+    // Keep dedup set bounded
+    if (processedIds.size > 200) {
+      const arr = [...processedIds];
+      processedIds.clear();
+      for (const id of arr.slice(-100)) processedIds.add(id);
     }
 
     console.log(`[chat-poller] Found ${newMessages.length} new message(s)`);
@@ -125,9 +96,14 @@ async function pollForMessages() {
   }
 }
 
-// Auto-start on import
-const state = getState();
-if (!state.timer) {
-  state.timer = setInterval(pollForMessages, POLL_INTERVAL_MS);
+/**
+ * Start the chat poller. Returns cleanup function to clear the interval.
+ * Must be called inside the SSE stream's start() callback.
+ */
+export function startChatPoller(): () => void {
+  // Reset bookmark to now so we don't pick up old messages
+  lastPollAt = new Date().toISOString();
+  const timer = setInterval(pollForMessages, POLL_INTERVAL_MS);
   console.log("[chat-poller] Started (checking every 3s)");
+  return () => clearInterval(timer);
 }
