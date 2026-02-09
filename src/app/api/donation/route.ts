@@ -14,11 +14,12 @@ const TIER_COSTS: Record<DonationTier, number> = {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { username, content, tier, channelId } = body as {
+  const { username, content, tier, channelId, msgId: clientId } = body as {
     username: string;
     content: string;
     tier: DonationTier;
     channelId: string;
+    msgId?: string;
   };
 
   if (!username || !content || !tier || !channelId) {
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const msgId = crypto.randomUUID();
+  const msgId = clientId || crypto.randomUUID();
 
   // Persist to Supabase (fire-and-forget)
   const supabase = createServerSupabaseClient();

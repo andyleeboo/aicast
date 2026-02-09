@@ -524,7 +524,7 @@ export function ChatPanel({
       fetch("/api/donation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, content: text, tier, channelId }),
+        body: JSON.stringify({ username, content: text, tier, channelId, msgId }),
       }).catch(() => {});
       return;
     }
