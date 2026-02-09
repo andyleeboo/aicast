@@ -7,6 +7,7 @@ import { dbRowToChatMessage } from "@/lib/types";
 import { trackEvent } from "@/lib/firebase";
 import { SuperChatSelector } from "./superchat-selector";
 import { CoinConfetti } from "./confetti";
+import { CommandsModal } from "./commands-modal";
 import type {
   ChatMessage,
   MessageRow,
@@ -145,6 +146,7 @@ export function ChatPanel({
   const [showSelector, setShowSelector] = useState(false);
   const [selectedTier, setSelectedTier] = useState<DonationTier | null>(null);
   const [confettiMsgs, setConfettiMsgs] = useState<Set<string>>(new Set());
+  const [showHelp, setShowHelp] = useState(false);
 
   const { coins, spend } = useCoinBalance();
   const { pins, addPin } = usePinnedDonations();
@@ -485,9 +487,19 @@ export function ChatPanel({
       {/* Header */}
       <div className="hidden items-center justify-between border-b border-border px-4 py-3 lg:flex">
         <h2 className="text-sm font-semibold">The Lobby</h2>
-        <span className="text-xs text-muted">
-          {coins} coins
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            className="rounded-lg px-2 py-1 text-xs font-bold text-muted transition-colors hover:bg-white/10 hover:text-foreground"
+            title="Commands & Games"
+          >
+            ?
+          </button>
+          <span className="text-xs text-muted">
+            {coins} coins
+          </span>
+        </div>
       </div>
 
       {/* Pinned donations */}
@@ -571,6 +583,14 @@ export function ChatPanel({
           }}
           className="flex gap-2"
         >
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            className="rounded-lg bg-white/10 px-2.5 py-2 text-sm font-bold text-muted transition-colors hover:text-foreground lg:hidden"
+            title="Commands & Games"
+          >
+            ?
+          </button>
           <input
             type="text"
             value={input}
@@ -607,6 +627,8 @@ export function ChatPanel({
           </button>
         </form>
       </div>
+
+      {showHelp && <CommandsModal onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
