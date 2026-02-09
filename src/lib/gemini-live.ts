@@ -71,9 +71,9 @@ function getClient(): GoogleGenAI {
 }
 
 const TTS_TIMEOUT_MS = 35_000;
-const VOICE_NAME = "Puck";
+const DEFAULT_VOICE = "Puck";
 
-function createGeminiTtsProvider(model: string): TtsProvider {
+function createGeminiTtsProvider(model: string, voice: string): TtsProvider {
   return {
     name: `gemini(${model})`,
     async generateSpeech(text, onChunk) {
@@ -85,7 +85,7 @@ function createGeminiTtsProvider(model: string): TtsProvider {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
               voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: VOICE_NAME },
+                prebuiltVoiceConfig: { voiceName: voice },
               },
             },
           },
@@ -115,13 +115,7 @@ function createGeminiTtsProvider(model: string): TtsProvider {
   };
 }
 
-// ── Provider chain (tried in order) ──────────────────────────────────
-
-const providers: TtsProvider[] = [
-  createGeminiTtsProvider("gemini-2.5-pro-preview-tts"),
-];
-
-// ── Public API (unchanged signature) ─────────────────────────────────
+// ── Public API ───────────────────────────────────────────────────────
 
 const MAX_TTS_CHARS = 500;
 
@@ -134,6 +128,7 @@ const MAX_TTS_CHARS = 500;
 export async function streamSpeech(
   text: string,
   onAudioChunk?: (base64Audio: string) => void,
+  voice?: string,
 ): Promise<string | null> {
   if (TTS_MODE === "browser") {
     console.log("[tts] TTS_MODE=browser — skipping server TTS, client will use Web Speech API");
@@ -151,6 +146,11 @@ export async function streamSpeech(
     text.length > MAX_TTS_CHARS
       ? text.slice(0, MAX_TTS_CHARS) + "..."
       : text;
+
+  const voiceName = voice ?? DEFAULT_VOICE;
+  const providers: TtsProvider[] = [
+    createGeminiTtsProvider("gemini-2.5-pro-preview-tts", voiceName),
+  ];
 
   for (const provider of providers) {
     try {

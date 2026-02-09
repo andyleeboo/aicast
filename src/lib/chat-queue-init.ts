@@ -140,9 +140,7 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
 
 // ── Core batch processing (used by both flush handler and Supabase poller) ──
 
-const STREAMER_ID = "late-night-ai";
-
-export async function processChatBatch(batch: BatchedChatMessage[]): Promise<void> {
+export async function processChatBatch(batch: BatchedChatMessage[], channelId: string = "late-night-ai"): Promise<void> {
   if (isShutdownSync()) {
     console.log("[chat-queue-init] Shutdown mode — skipping AI response");
     return;
@@ -150,9 +148,9 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
 
   const responseId = crypto.randomUUID();
 
-  const channel = await getChannelFromDB(STREAMER_ID);
+  const channel = await getChannelFromDB(channelId);
   if (!channel) {
-    console.error("[chat-queue-init] Channel not found:", STREAMER_ID);
+    console.error("[chat-queue-init] Channel not found:", channelId);
     return;
   }
 
@@ -218,7 +216,7 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     supabase
       .from("messages")
       .insert({
-        channel_id: STREAMER_ID,
+        channel_id: channelId,
         role: "assistant",
         content: response,
         username: channel.streamer.name,
@@ -247,7 +245,7 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
   // Step 2: Stream audio via Live API (non-blocking — audio plays while text is shown)
   streamSpeech(response, (chunk) => {
     emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
-  })
+  }, channel.streamer.ttsVoice)
     .then(() => {
       emitAction({ type: "ai-audio-end", id: responseId });
     })
@@ -262,4 +260,4 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
 
 // Register as flush handler for backward compat (only works when caller
 // shares the same globalThis, e.g. within the SSE endpoint).
-setFlushHandler(processChatBatch);
+setFlushHandler((batch) => processChatBatch(batch, "late-night-ai"));

@@ -1,7 +1,9 @@
+import { NextRequest } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { subscribe, touchViewer, removeViewer, type ActionEvent } from "@/lib/action-bus";
-import "@/lib/idle-behavior"; // Start Bob's idle expressions
-import "@/lib/proactive-speech"; // Start Bob's proactive monologues
+import "@/lib/idle-behavior"; // Start idle expressions
+import "@/lib/proactive-speech"; // Start proactive monologues
+import { setActiveChannel } from "@/lib/proactive-speech";
 import { checkForNewMessages } from "@/lib/chat-poller";
 import { isShutdown } from "@/lib/service-config";
 
@@ -18,7 +20,9 @@ const GRACEFUL_CLOSE_MS = (maxDuration - 5) * 1000; // 55s
 // Chat poll + keepalive combined interval
 const POLL_MS = 1_500;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const channelId = req.nextUrl.searchParams.get("channel") ?? "late-night-ai";
+  setActiveChannel(channelId);
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -76,7 +80,7 @@ export async function GET() {
           touchViewer(viewerId);
 
           // Check for new chat messages
-          await checkForNewMessages();
+          await checkForNewMessages(channelId);
 
           // Broadcast maintenance status every 5th tick (~15s)
           if (tickCount % 5 === 0) {

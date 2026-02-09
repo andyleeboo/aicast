@@ -23,7 +23,7 @@ let lastPollAt = new Date().toISOString();
 const processedIds = new Set<string>();
 
 /** Check Supabase for new chat messages and process any found. */
-export async function checkForNewMessages(): Promise<void> {
+export async function checkForNewMessages(channelId: string = "late-night-ai"): Promise<void> {
   if (!acquireProcessingLock()) return;
 
   try {
@@ -34,6 +34,7 @@ export async function checkForNewMessages(): Promise<void> {
       .from("messages")
       .select("*")
       .eq("role", "user")
+      .eq("channel_id", channelId)
       .gt("created_at", lastPollAt)
       .order("created_at", { ascending: true })
       .limit(20);
@@ -81,7 +82,7 @@ export async function checkForNewMessages(): Promise<void> {
     }
 
     touchActivity();
-    await processChatBatch(batch);
+    await processChatBatch(batch, channelId);
   } catch (err) {
     console.error("[chat-poller] Error:", err);
   } finally {

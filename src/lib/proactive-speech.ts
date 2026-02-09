@@ -29,7 +29,12 @@ import type { ChatMessage } from "@/lib/types";
 const MIN_SILENCE_MS = 45_000;
 const MAX_SILENCE_MS = 90_000;
 const CHECK_INTERVAL_MS = 5_000;
-const STREAMER_ID = "late-night-ai";
+
+let activeChannelId = "late-night-ai";
+
+export function setActiveChannel(channelId: string) {
+  activeChannelId = channelId;
+}
 
 interface ProactiveState {
   timer: ReturnType<typeof setInterval> | null;
@@ -83,9 +88,9 @@ async function maybeSpeakProactively() {
   state.nextSpeakAt = now + randomDelay();
 
   try {
-    const channel = await getChannelFromDB(STREAMER_ID);
+    const channel = await getChannelFromDB(activeChannelId);
     if (!channel) {
-      console.error("[proactive-speech] Channel not found:", STREAMER_ID);
+      console.error("[proactive-speech] Channel not found:", activeChannelId);
       return;
     }
 
@@ -136,7 +141,7 @@ async function maybeSpeakProactively() {
       supabase
         .from("messages")
         .insert({
-          channel_id: STREAMER_ID,
+          channel_id: activeChannelId,
           role: "assistant",
           content: response,
           username: channel.streamer.name,
@@ -166,7 +171,7 @@ async function maybeSpeakProactively() {
     // Stream audio via Live API
     streamSpeech(response, (chunk) => {
       emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
-    })
+    }, channel.streamer.ttsVoice)
       .then(() => {
         emitAction({ type: "ai-audio-end", id: responseId });
       })

@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     timestamp: Date.now(),
   });
 
-  // Immediately process — Bob reacts NOW (bypasses batch queue)
+  // Immediately process — streamer reacts NOW (bypasses batch queue)
   await processChatBatch([
     {
       id: msgId,
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       donationAmount: amount,
       donationTier: tier,
     },
-  ]);
+  ], channelId);
 
   return NextResponse.json({ ok: true });
 }

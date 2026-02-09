@@ -351,8 +351,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   // Subscribe to SSE for remote-triggered actions and AI responses
   // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {
-    console.log("[sse] Connecting to /api/avatar/events");
-    const es = new EventSource("/api/avatar/events");
+    console.log(`[sse] Connecting to /api/avatar/events?channel=${channel.id}`);
+    const es = new EventSource(`/api/avatar/events?channel=${channel.id}`);
 
     es.onopen = () => { console.log("[sse] Connected"); setSseConnected(true); };
     es.onerror = (e) => { console.warn("[sse] Error/disconnected, readyState:", es.readyState, e); setSseConnected(false); };
@@ -477,7 +477,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       es.close();
       if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
     };
-  }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill, playDonationSound]);
+  }, [channel.id, handleEmote, handleAudioChunk, handleAudioEnd, activateSkill, playDonationSound]);
 
   // --- Draggable divider logic (mobile: vertical, desktop: horizontal) ---
   const [dragging, setDragging] = useState(false);
@@ -564,6 +564,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onEmoteComplete={handleEmoteComplete}
             isSpeaking={bubble.isSpeaking}
             scenePose={scenePose}
+            skinColor={channel.streamer.skinColor}
+            hairColor={channel.streamer.hairColor}
+            showBeard={channel.id === "late-night-ai"}
           />
           {gameState && <GameOverlay gameState={gameState} />}
         </div>

@@ -1,5 +1,4 @@
-/* eslint-disable react-hooks/preserve-manual-memoization */
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -86,12 +85,7 @@ const STRANDS: StrandDef[] = [
   { pos: [0.1, -0.56, 0.78], restPitch: -0.03, restRoll: -0.04, baseRot: [PI, 0, 0], beard: true },
 ];
 
-// ─── Pre-allocated at module scope (zero GC) ────────────────────────
-
-const hairMaterial = new THREE.MeshPhongMaterial({
-  color: new THREE.Color(0.16, 0.12, 0.1),
-  shininess: 40,
-});
+// ─── Default hair color (overridden by props) ──────────────────────
 
 // Tapered cylinder per segment depth — hair
 const hairGeoms = Array.from({ length: SEGMENTS }, (_, i) => {
@@ -122,19 +116,38 @@ interface JointPhysics {
 
 // ─── HairStrands ────────────────────────────────────────────────────
 
-export function HairStrands() {
+interface HairStrandsProps {
+  hairColor?: [number, number, number];
+  showBeard?: boolean;
+}
+
+export function HairStrands({ hairColor = [0.16, 0.12, 0.1], showBeard = true }: HairStrandsProps) {
   const rootRef = useRef<THREE.Group>(null);
   const headObj = useRef<THREE.Object3D | null>(null);
   const prevQ = useRef(new THREE.Quaternion());
 
+  const hairMaterial = useMemo(
+    () =>
+      new THREE.MeshPhongMaterial({
+        color: new THREE.Color(...hairColor),
+        shininess: 40,
+      }),
+    [hairColor],
+  );
+
+  const activeStrands = useMemo(
+    () => (showBeard ? STRANDS : STRANDS.filter((s) => !s.beard)),
+    [showBeard],
+  );
+
   // Joint group refs: [strand][segment]
   const jointRefs = useRef<(THREE.Group | null)[][]>(
-    STRANDS.map(() => Array(SEGMENTS).fill(null)),
+    activeStrands.map(() => Array(SEGMENTS).fill(null)),
   );
 
   // Spring state: [strand][segment]
   const physics = useRef<JointPhysics[][]>(
-    STRANDS.map((s) =>
+    activeStrands.map((s) =>
       Array.from({ length: SEGMENTS }, () => ({
         ax: s.restPitch,
         az: s.restRoll,
@@ -144,10 +157,23 @@ export function HairStrands() {
     ),
   );
 
-  // Stable ref callbacks — created once, sets initial rest rotation
+  // Re-init physics and refs when active strands change
+  useEffect(() => {
+    jointRefs.current = activeStrands.map(() => Array(SEGMENTS).fill(null));
+    physics.current = activeStrands.map((s) =>
+      Array.from({ length: SEGMENTS }, () => ({
+        ax: s.restPitch,
+        az: s.restRoll,
+        vx: 0,
+        vz: 0,
+      })),
+    );
+  }, [activeStrands]);
+
+  // Stable ref callbacks — created once per activeStrands set, sets initial rest rotation
   const refCbs = useMemo(
     () =>
-      STRANDS.map((s, si) =>
+      activeStrands.map((s, si) =>
         Array.from(
           { length: SEGMENTS },
           (_, d) => (g: THREE.Group | null) => {
@@ -159,7 +185,7 @@ export function HairStrands() {
           },
         ),
       ),
-    [],
+    [activeStrands],
   );
 
   useFrame((_, delta) => {
@@ -182,8 +208,8 @@ export function HairStrands() {
     const hvy = _eu.y / dt; // yaw velocity
     prevQ.current.copy(_wq);
 
-    for (let s = 0; s < STRANDS.length; s++) {
-      const def = STRANDS[s];
+    for (let s = 0; s < activeStrands.length; s++) {
+      const def = activeStrands[s];
       const ph = physics.current[s];
 
       for (let j = 0; j < SEGMENTS; j++) {
@@ -217,9 +243,9 @@ export function HairStrands() {
 
   return (
     <group ref={rootRef}>
-      {STRANDS.map((strand, si) => (
+      {activeStrands.map((strand, si) => (
         <group key={si} position={strand.pos} rotation={strand.baseRot}>
-          <ChainSegment depth={0} refs={refCbs[si]} beard={!!strand.beard} />
+          <ChainSegment depth={0} refs={refCbs[si]} beard={!!strand.beard} material={hairMaterial} />
         </group>
       ))}
     </group>
@@ -232,9 +258,10 @@ interface ChainSegmentProps {
   depth: number;
   refs: ((g: THREE.Group | null) => void)[];
   beard: boolean;
+  material: THREE.Material;
 }
 
-function ChainSegment({ depth, refs, beard }: ChainSegmentProps) {
+function ChainSegment({ depth, refs, beard, material }: ChainSegmentProps) {
   const geoms = beard ? beardGeoms : hairGeoms;
   const len = beard ? BEARD_SEG_LEN : SEG_LEN;
 
@@ -242,12 +269,12 @@ function ChainSegment({ depth, refs, beard }: ChainSegmentProps) {
     <group ref={refs[depth]}>
       <mesh
         position={[0, len / 2, 0]}
-        material={hairMaterial}
+        material={material}
         geometry={geoms[depth]}
       />
       {depth < SEGMENTS - 1 && (
         <group position={[0, len, 0]}>
-          <ChainSegment depth={depth + 1} refs={refs} beard={beard} />
+          <ChainSegment depth={depth + 1} refs={refs} beard={beard} material={material} />
         </group>
       )}
     </group>

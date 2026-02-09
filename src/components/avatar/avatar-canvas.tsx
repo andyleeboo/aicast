@@ -12,6 +12,9 @@ interface AvatarCanvasProps {
   onEmoteComplete: () => void;
   isSpeaking: boolean;
   scenePose?: Partial<ScenePose> | null;
+  skinColor?: [number, number, number];
+  hairColor?: [number, number, number];
+  showBeard?: boolean;
 }
 
 export function AvatarCanvas({
@@ -21,6 +24,9 @@ export function AvatarCanvas({
   onEmoteComplete,
   isSpeaking,
   scenePose,
+  skinColor,
+  hairColor,
+  showBeard,
 }: AvatarCanvasProps) {
   return (
     <div className="relative h-full w-full">
@@ -42,6 +48,9 @@ export function AvatarCanvas({
           onEmoteComplete={onEmoteComplete}
           isSpeaking={isSpeaking}
           scenePose={scenePose}
+          skinColor={skinColor}
+          hairColor={hairColor}
+          showBeard={showBeard}
         />
       </Canvas>
     </div>

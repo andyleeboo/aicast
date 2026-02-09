@@ -1,33 +1,31 @@
-import { forwardRef } from "react";
+import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
 import { Text } from "@react-three/drei";
 
 // curveRadius is a valid troika-three-text prop but not in drei's TS types
 const CURVE_PROPS = { curveRadius: 1.0 } as Record<string, unknown>;
 
-// Pre-create materials to avoid re-creation on every render
-const skinMaterial = new THREE.MeshPhongMaterial({
-  color: new THREE.Color(0.95, 0.85, 0.75),
-});
-const earOuterMaterial = new THREE.MeshPhongMaterial({
-  color: new THREE.Color(0.9, 0.78, 0.68),
-});
-const earInnerMaterial = new THREE.MeshPhongMaterial({
-  color: new THREE.Color(0.85, 0.65, 0.55),
-});
-
 interface HeadGeometryProps {
   leftEyeRef: React.RefObject<THREE.Mesh | null>;
   rightEyeRef: React.RefObject<THREE.Mesh | null>;
   mouthRef: React.RefObject<THREE.Mesh | null>;
+  skinColor?: [number, number, number];
 }
 
 export const HeadGeometry = forwardRef<THREE.Group, HeadGeometryProps>(
-  function HeadGeometry({ leftEyeRef, rightEyeRef, mouthRef }, ref) {
+  function HeadGeometry({ leftEyeRef, rightEyeRef, mouthRef, skinColor = [0.95, 0.85, 0.75] }, ref) {
+    const [skinMat, earOuterMat, earInnerMat] = useMemo(() => {
+      const [r, g, b] = skinColor;
+      return [
+        new THREE.MeshPhongMaterial({ color: new THREE.Color(r, g, b) }),
+        new THREE.MeshPhongMaterial({ color: new THREE.Color(r - 0.05, g - 0.07, b - 0.07) }),
+        new THREE.MeshPhongMaterial({ color: new THREE.Color(r - 0.1, g - 0.2, b - 0.2) }),
+      ];
+    }, [skinColor]);
     return (
       <group ref={ref}>
         {/* Head sphere */}
-        <mesh material={skinMaterial}>
+        <mesh material={skinMat}>
           <sphereGeometry args={[1.0, 64, 64]} />
         </mesh>
 
@@ -77,20 +75,20 @@ export const HeadGeometry = forwardRef<THREE.Group, HeadGeometryProps>(
 
         {/* Left ear */}
         <group position={[-0.95, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <mesh material={earOuterMaterial}>
+          <mesh material={earOuterMat}>
             <capsuleGeometry args={[0.25, 0.2, 8, 16]} />
           </mesh>
-          <mesh position={[0.08, 0, 0.05]} material={earInnerMaterial}>
+          <mesh position={[0.08, 0, 0.05]} material={earInnerMat}>
             <capsuleGeometry args={[0.12, 0.11, 8, 16]} />
           </mesh>
         </group>
 
         {/* Right ear */}
         <group position={[0.95, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <mesh material={earOuterMaterial}>
+          <mesh material={earOuterMat}>
             <capsuleGeometry args={[0.25, 0.2, 8, 16]} />
           </mesh>
-          <mesh position={[-0.08, 0, 0.05]} material={earInnerMaterial}>
+          <mesh position={[-0.08, 0, 0.05]} material={earInnerMat}>
             <capsuleGeometry args={[0.12, 0.11, 8, 16]} />
           </mesh>
         </group>
