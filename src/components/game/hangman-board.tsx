@@ -15,7 +15,7 @@ function Gallows({ wrongGuesses }: { wrongGuesses: number }) {
   const bw = 2.5; // stroke width for body
 
   return (
-    <svg viewBox="0 0 200 200" className="mx-auto h-full w-full max-h-[140px] max-w-[140px]">
+    <svg viewBox="0 0 200 200" className="mx-auto h-full w-full max-h-[100px] max-w-[100px] lg:max-h-[140px] lg:max-w-[140px]">
       {/* Gallows structure */}
       <line x1="40" y1="180" x2="160" y2="180" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
       <line x1="60" y1="180" x2="60" y2="30" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
@@ -59,7 +59,7 @@ export function HangmanBoard({ data, status }: HangmanBoardProps) {
   );
 
   return (
-    <div className="flex h-full flex-col gap-2 p-3">
+    <div className="flex h-full flex-col gap-1.5 p-2 lg:gap-2 lg:p-3">
       {/* Category hint */}
       <div className="text-center text-xs font-medium uppercase tracking-wider text-gray-400">
         {data.category}

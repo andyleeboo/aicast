@@ -51,17 +51,17 @@ function TemperatureMeter({ warmth }: { warmth: number }) {
 
 export function TwentyQBoard({ data, status }: TwentyQBoardProps) {
   return (
-    <div className="flex h-full flex-col gap-2 p-3">
+    <div className="flex h-full flex-col gap-1.5 p-2 lg:gap-2 lg:p-3">
       {/* Category badge */}
       <div className="text-center">
-        <span className="inline-block rounded-full bg-purple-100 px-3 py-0.5 text-xs font-bold uppercase tracking-wider text-purple-700">
+        <span className="inline-block rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-700 lg:px-3 lg:text-xs">
           {data.category}
         </span>
       </div>
 
       {/* Question counter */}
-      <div className="text-center text-xs font-medium text-gray-500">
-        <span className="text-lg font-bold text-gray-700">{data.questionsAsked}</span>
+      <div className="text-center text-[10px] font-medium text-gray-500 lg:text-xs">
+        <span className="text-base font-bold text-gray-700 lg:text-lg">{data.questionsAsked}</span>
         <span className="text-gray-400"> / {data.maxQuestions}</span>
         <span className="ml-1 text-gray-400">questions</span>
       </div>
@@ -70,9 +70,9 @@ export function TwentyQBoard({ data, status }: TwentyQBoardProps) {
       <TemperatureMeter warmth={data.warmth} />
 
       {/* Q&A History */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-1 lg:space-y-1.5">
         {data.history.map((entry, i) => (
-          <div key={i} className="rounded-lg bg-gray-50 px-2 py-1.5">
+          <div key={i} className="rounded-lg bg-gray-50 px-1.5 py-1 lg:px-2 lg:py-1.5">
             <div className="flex items-start gap-1.5">
               <span className="shrink-0 text-[10px] font-bold text-gray-400">
                 {entry.isGuess ? "G" : `Q${i + 1}`}
@@ -127,9 +127,9 @@ export function TwentyQBoard({ data, status }: TwentyQBoardProps) {
         </div>
       )}
       {status === "playing" && (
-        <div className="text-center text-[11px] text-gray-400">
-          Type <span className="font-mono font-semibold">/ask &lt;question&gt;</span> or{" "}
-          <span className="font-mono font-semibold">/answer &lt;guess&gt;</span>
+        <div className="text-center text-[10px] text-gray-400 lg:text-[11px]">
+          Type <span className="font-mono font-semibold">/ask</span> or{" "}
+          <span className="font-mono font-semibold">/answer</span> in chat
         </div>
       )}
     </div>
