@@ -117,7 +117,10 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
   const lines = sorted.map((msg) => {
     let prefix = "";
     if (msg.priority === "donation" && msg.donationAmount) {
-      prefix = `[DONATION $${msg.donationAmount}] `;
+      const tierLabel = msg.donationTier === "red" ? " RED MEGA"
+                      : msg.donationTier === "gold" ? " GOLD"
+                      : "";
+      prefix = `[SUPERCHAT $${msg.donationAmount}${tierLabel}] `;
     } else if (msg.priority === "highlight") {
       prefix = "[HIGHLIGHTED] ";
     }

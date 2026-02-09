@@ -24,6 +24,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   username?: string;
+  donationTier?: DonationTier;
+  donationAmount?: number;
 }
 
 export type MessageRow = Tables<"messages">;
@@ -97,6 +99,8 @@ export type EmoteCommand =
 
 export type MessagePriority = "normal" | "highlight" | "donation";
 
+export type DonationTier = "blue" | "gold" | "red";
+
 export interface BatchedChatMessage {
   id: string;
   username: string;
@@ -105,6 +109,7 @@ export interface BatchedChatMessage {
   priority: MessagePriority;
   donationAmount?: number;
   donationCurrency?: string;
+  donationTier?: DonationTier;
 }
 
 export interface ChatBatchRequest {
