@@ -16,7 +16,7 @@ export interface UseSpeechBubbleReturn {
   showLoading: () => void;
   /** Audio/speech playback started — activates glow, cancels any auto-clear. */
   speakingStarted: () => void;
-  /** Audio/speech playback ended — deactivates glow, starts linger timer. */
+  /** Audio/speech playback ended — deactivates glow, clears bubble immediately. */
   speakingEnded: () => void;
   /** Force-clear bubble and all timers. */
   clear: () => void;
@@ -26,8 +26,6 @@ export interface UseSpeechBubbleReturn {
   clearMaintenance: () => void;
 }
 
-/** Duration the bubble lingers after speech ends (ms). */
-const LINGER_MS = 2000;
 /** Minimum auto-clear time for muted/no-audio path (ms). */
 const MIN_READ_MS = 5000;
 /** Per-character reading time — gives ~75 WPM reading speed (ms). */
@@ -108,14 +106,12 @@ export function useSpeechBubble(): UseSpeechBubbleReturn {
     setIsSpeaking(false);
     if (safetyTimer.current) { clearTimeout(safetyTimer.current); safetyTimer.current = null; }
     if (readTimer.current) { clearTimeout(readTimer.current); readTimer.current = null; }
-
-    // Keep text visible after speech ends — scale linger to text length
-    const charCount = responseTextRef.current?.length ?? 0;
-    const linger = Math.max(LINGER_MS, charCount * MS_PER_CHAR);
-    if (lingerTimer.current) clearTimeout(lingerTimer.current);
-    lingerTimer.current = setTimeout(() => {
-      if (!maintenanceRef.current) setText(null);
-    }, linger);
+    if (lingerTimer.current) { clearTimeout(lingerTimer.current); lingerTimer.current = null; }
+    // Clear bubble immediately — no linger
+    if (!maintenanceRef.current) {
+      setText(null);
+      responseTextRef.current = null;
+    }
   }, []);
 
   const showMaintenance = useCallback((msg: string) => {

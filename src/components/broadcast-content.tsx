@@ -237,7 +237,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     } else {
       console.warn("[web-speech] No voice found for", lang, "— available:", voices.length);
     }
-    utter.onstart = () => { console.log("[web-speech] Started"); bubbleRef.current.speakingStarted(); };
+    utter.onstart = () => { console.log("[web-speech] Started"); bubbleRef.current.showResponse(text); bubbleRef.current.speakingStarted(); };
     utter.onend = () => { console.log("[web-speech] Ended"); bubbleRef.current.speakingEnded(); };
     utter.onerror = (e) => { console.error("[web-speech] Error:", e.error); bubbleRef.current.speakingEnded(); };
     window.speechSynthesis.speak(utter);
@@ -249,6 +249,10 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       if (mutedRef.current) return;
       window.speechSynthesis?.cancel(); // kill browser fallback if racing
       gotServerAudio.current = true;
+      // Show bubble + activate speaking on first chunk
+      if (currentResponseText.current) {
+        bubbleRef.current.showResponse(currentResponseText.current);
+      }
       bubbleRef.current.speakingStarted();
       playerRef.current.enqueue(data);
     },
@@ -342,7 +346,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       channel: channel.id,
       platform: /Mobi|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
     });
-    fetch("/api/game")
+    fetch(`/api/game?channel=${encodeURIComponent(channel.id)}`)
       .then((r) => r.json())
       .then((data) => { if (data.state) handleGameState(data.state); })
       .catch((err) => { console.warn("[broadcast] Failed to fetch initial game state:", err); });
@@ -392,7 +396,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         }
 
         if (data.type === "ai-thinking") {
-          bubbleRef.current.showLoading();
           setGesture("uncertain");
           return;
         }
@@ -419,9 +422,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             // Muted: show text for reading duration, no audio
             if (data.response) bubbleRef.current.showForReading(data.response);
           } else {
-            // Unmuted: show loading then immediately show real text
-            bubbleRef.current.showLoading();
-            if (data.response) bubbleRef.current.showResponse(data.response);
+            // Don't show bubble yet — wait for audio to arrive.
+            // Text is stashed in currentResponseText ref for use when audio starts.
           }
           return;
         }
@@ -432,6 +434,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             if (mutedRef.current) return;
             window.speechSynthesis?.cancel();
             gotServerAudio.current = true;
+            if (currentResponseText.current) {
+              bubbleRef.current.showResponse(currentResponseText.current);
+            }
             bubbleRef.current.speakingStarted();
             playerRef.current.play(data.audioData);
           }
@@ -684,7 +689,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onUserInteraction={handleUserInteraction}
             onGameState={handleGameState}
             onMessageSent={() => {
-              bubbleRef.current.showLoading();
               setGesture("uncertain");
             }}
             donations={donations}
