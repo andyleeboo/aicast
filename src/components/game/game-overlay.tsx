@@ -15,11 +15,11 @@ const GAME_LABELS: Record<string, string> = {
 
 export function GameOverlay({ gameState }: GameOverlayProps) {
   return (
-    <div className="absolute right-4 top-4 bottom-4 z-20 flex w-[45%] max-w-[280px] animate-in fade-in slide-in-from-right-4 duration-300">
-      <div className="flex w-full flex-col overflow-hidden rounded-2xl bg-white/95 shadow-xl backdrop-blur-sm">
+    <div className="absolute z-20 flex animate-in fade-in duration-300 max-lg:inset-2 max-lg:slide-in-from-bottom-4 lg:right-4 lg:top-4 lg:bottom-4 lg:w-[45%] lg:max-w-[280px] lg:slide-in-from-right-4">
+      <div className="flex w-full flex-col overflow-hidden rounded-2xl bg-white/95 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
+        <div className="flex items-center justify-between border-b border-gray-200 px-2.5 py-1.5 lg:px-3 lg:py-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 lg:text-xs">
             {GAME_LABELS[gameState.type] ?? "Game"}
           </span>
           {gameState.status === "playing" && (

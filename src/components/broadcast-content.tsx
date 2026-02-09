@@ -387,8 +387,16 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           setGameState(gs);
 
           if (gs.status === "playing") {
-            // Bob slides aside for the whiteboard
-            setScenePose({ x: -1.8, scale: 0.7 });
+            // On mobile, move Bob off-screen (game overlay covers full canvas);
+            // on desktop, slide left to make room for the game panel.
+            // Note: checked once at game start; orientation changes mid-game
+            // won't re-evaluate — acceptable for hackathon scope.
+            const isMobile = window.innerWidth < 1024;
+            setScenePose(
+              isMobile
+                ? { x: 3.5, y: -2.5, scale: 0.3 }
+                : { x: -1.8, scale: 0.7 },
+            );
             if (gameEndTimer.current) {
               clearTimeout(gameEndTimer.current);
               gameEndTimer.current = null;
@@ -504,7 +512,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
 
       {/* Stream area — adjustable height on mobile, fills remaining space on desktop */}
       <div
-        className="relative flex h-[var(--avatar-h)] shrink-0 flex-col lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink"
+        className={`relative flex shrink-0 flex-col lg:h-auto lg:min-w-0 lg:flex-1 lg:shrink ${gameState ? "max-lg:h-[min(300px,55vh)]" : "h-[var(--avatar-h)]"}`}
         style={{ "--avatar-h": `${avatarHeight}px` } as React.CSSProperties}
       >
         {/* 3D Avatar */}
@@ -520,9 +528,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           {gameState && <GameOverlay gameState={gameState} />}
         </div>
 
-        {/* Speech bubble — flows below canvas on mobile, floats over canvas on desktop */}
+        {/* Speech bubble — flows below canvas on mobile, floats over canvas on desktop.
+             Hidden on mobile during games (Bob speaks via audio anyway). */}
         <div
           className={`pointer-events-none z-10 justify-center transition-all duration-300 max-lg:mx-4 max-lg:py-1.5 lg:absolute lg:left-1/2 lg:top-[15%] lg:max-w-md lg:-translate-x-1/2 ${
+            gameState ? "max-lg:hidden " : ""
+          }${
             bubble.text
               ? "flex opacity-100 lg:translate-y-0"
               : "hidden lg:flex lg:-translate-y-4 lg:opacity-0"
