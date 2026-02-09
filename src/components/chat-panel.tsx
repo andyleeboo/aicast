@@ -606,13 +606,21 @@ export function ChatPanel({
           >
             ?
           </button>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={selectedTier ? "Type your Super Chat message..." : "Say something..."}
-            className="flex-1 rounded-lg bg-background px-3 py-2 text-base text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
-          />
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value.slice(0, 500))}
+              maxLength={500}
+              placeholder={selectedTier ? "Type your Super Chat message..." : "Say something..."}
+              className="w-full rounded-lg bg-background px-3 py-2 pr-16 text-base text-foreground placeholder:text-muted/60 outline-none ring-1 ring-border transition-shadow focus:ring-accent"
+            />
+            {input.length > 0 && (
+              <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[10px] tabular-nums ${input.length >= 450 ? (input.length >= 500 ? "text-red-400" : "text-yellow-400") : "text-muted/40"}`}>
+                {input.length}/500
+              </span>
+            )}
+          </div>
           <div className="relative" ref={selectorRef}>
             <button
               type="button"

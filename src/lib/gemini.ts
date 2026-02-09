@@ -43,7 +43,7 @@ export async function chat(
         contents,
         config: {
           systemInstruction: systemPrompt,
-          maxOutputTokens: 300,
+          maxOutputTokens: 8192,
           temperature: 0.9,
         },
       });
@@ -57,12 +57,6 @@ export async function chat(
         continue;
       }
 
-      // Cap response length to prevent runaway output from reaching clients
-      const MAX_RESPONSE_CHARS = 500;
-      if (firstTextPart.length > MAX_RESPONSE_CHARS) {
-        console.warn(`[chat] Response truncated from ${firstTextPart.length} to ${MAX_RESPONSE_CHARS} chars`);
-        return firstTextPart.slice(0, MAX_RESPONSE_CHARS);
-      }
       return firstTextPart;
     } catch (err) {
       console.warn(`[chat] ${model} failed:`, err instanceof Error ? err.message : err);
