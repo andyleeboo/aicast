@@ -20,7 +20,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://aicast.vercel.app"),
+  metadataBase: new URL("https://aicast-gemini.vercel.app"),
   title: "AICast — The World's First AI Streamer",
   description:
     "Bob is LIVE! An AI that streams, chats, and talks — just like a real Twitch streamer. Powered by Gemini 3.",
