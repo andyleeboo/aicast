@@ -354,9 +354,11 @@ export function ChatPanel({
       if (!value) return;
       const label = value.length === 1 ? value.toUpperCase() : `"${value}"`;
       sendGameCommand("/guess", { action: "guess", value }, (data) =>
-        data.correct
-          ? `${username} guessed ${label} — correct!`
-          : `${username} guessed ${label} — wrong!`,
+        data.received
+          ? `${username} guessed "${value}" — Bob is judging...`
+          : data.correct
+            ? `${username} guessed ${label} — correct!`
+            : `${username} guessed ${label} — wrong!`,
       );
       return;
     }
@@ -381,7 +383,52 @@ export function ChatPanel({
       const value = text.slice(8).trim();
       if (!value) return;
       sendGameCommand("/answer", { action: "answer", value }, () =>
-        `${username} guesses: "${value}" — Bob is thinking...`,
+        `${username} answers: "${value}" — Bob is judging...`,
+      );
+      return;
+    }
+
+    // ── New games: Trivia, Would You Rather, Hot or Cold ──────────
+
+    if (lower === "/trivia") {
+      sendGameCommand("/trivia", { action: "start", game: "trivia" }, () =>
+        `${username} started Trivia Quiz! Type /answer <answer> to play`,
+      );
+      return;
+    }
+
+    if (lower === "/wyr") {
+      sendGameCommand("/wyr", { action: "start", game: "wyr" }, () =>
+        `${username} started Would You Rather! Type /vote a or /vote b`,
+      );
+      return;
+    }
+
+    if (lower === "/hotcold") {
+      sendGameCommand("/hotcold", { action: "start", game: "hotcold" }, () =>
+        `${username} started Hot or Cold! Type /guess <word> to play`,
+      );
+      return;
+    }
+
+    if (lower.startsWith("/vote ")) {
+      const choice = text.slice(6).trim().toLowerCase();
+      if (choice !== "a" && choice !== "b") {
+        addSystemMessage("Usage: /vote a or /vote b");
+        setInput("");
+        return;
+      }
+      sendGameCommand("/vote", { action: "vote", value: choice, voter: username }, (data) =>
+        data.alreadyVoted
+          ? `${username} already voted this round`
+          : `${username} voted ${choice.toUpperCase()}!`,
+      );
+      return;
+    }
+
+    if (lower === "/next") {
+      sendGameCommand("/next", { action: "next" }, () =>
+        `${username} closed voting — Bob is deciding...`,
       );
       return;
     }

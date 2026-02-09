@@ -13,6 +13,21 @@ const GAMES = [
     description: "Bob thinks of something — ask yes/no questions to figure it out in 20 tries.",
     commands: ["/20q", "/ask <question>", "/answer <guess>"],
   },
+  {
+    name: "Trivia Quiz",
+    description: "Bob reads 5 trivia questions — answer before 3 strikes and you're out!",
+    commands: ["/trivia", "/answer <answer>"],
+  },
+  {
+    name: "Would You Rather",
+    description: "Bob poses 5 dilemmas — vote for your pick and see what Bob chooses!",
+    commands: ["/wyr", "/vote a", "/vote b", "/next"],
+  },
+  {
+    name: "Hot or Cold",
+    description: "Bob thinks of a thing — guess what it is. Each guess gets a temperature rating!",
+    commands: ["/hotcold", "/guess <word>"],
+  },
 ];
 
 const GESTURE_COMMANDS = ["/nod", "/shake"];
@@ -27,10 +42,8 @@ const REACTION_COMMANDS = [
 ];
 
 const COMING_SOON = [
-  { name: "Trivia", description: "Bob asks questions, chat races to answer" },
   { name: "Word Chain", description: "Say a word starting with the last letter" },
   { name: "Story Builder", description: "Collaborative storytelling with Bob" },
-  { name: "Would You Rather", description: "Bob poses dilemmas, chat votes" },
   { name: "Rock Paper Scissors", description: "Play against Bob" },
 ];
 
