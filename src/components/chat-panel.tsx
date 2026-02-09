@@ -95,7 +95,10 @@ function usePinnedDonations() {
   const [pins, setPins] = useState<PinnedDonation[]>([]);
   const addPin = useCallback((donation: Omit<PinnedDonation, "expiresAt">) => {
     const duration = donation.tier === "red" ? 60_000 : 30_000;
-    setPins((prev) => [...prev, { ...donation, expiresAt: Date.now() + duration }]);
+    setPins((prev) => {
+      if (prev.some((p) => p.id === donation.id)) return prev;
+      return [...prev, { ...donation, expiresAt: Date.now() + duration }];
+    });
   }, []);
   useEffect(() => {
     const t = setInterval(() => setPins((p) => p.filter((d) => d.expiresAt > Date.now())), 1000);
