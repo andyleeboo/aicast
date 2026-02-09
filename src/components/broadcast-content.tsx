@@ -294,8 +294,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
       osc.start();
       osc.stop(ctx.currentTime + 0.5);
-    } catch {
-      // AudioContext may not be available
+    } catch (err) {
+      console.warn("[donation-sound] AudioContext error:", err);
     }
   }, []);
 
@@ -345,7 +345,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     fetch("/api/game")
       .then((r) => r.json())
       .then((data) => { if (data.state) handleGameState(data.state); })
-      .catch(() => {});
+      .catch((err) => { console.warn("[broadcast] Failed to fetch initial game state:", err); });
   }, [handleGameState]);
 
   // Subscribe to SSE for remote-triggered actions and AI responses
@@ -468,8 +468,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         } else if (data.type === "emote") {
           handleEmote(value as EmoteCommand);
         }
-      } catch {
-        // Ignore malformed events
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          console.warn("[sse] Malformed event data:", event.data?.substring(0, 100));
+        } else {
+          console.error("[sse] Error processing event:", err);
+        }
       }
     };
 

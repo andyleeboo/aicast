@@ -14,14 +14,14 @@ interface HeadGeometryProps {
 
 export const HeadGeometry = forwardRef<THREE.Group, HeadGeometryProps>(
   function HeadGeometry({ leftEyeRef, rightEyeRef, mouthRef, skinColor = [0.95, 0.85, 0.75] }, ref) {
+    const [r, g, b] = skinColor;
     const [skinMat, earOuterMat, earInnerMat] = useMemo(() => {
-      const [r, g, b] = skinColor;
       return [
         new THREE.MeshPhongMaterial({ color: new THREE.Color(r, g, b) }),
         new THREE.MeshPhongMaterial({ color: new THREE.Color(r - 0.05, g - 0.07, b - 0.07) }),
         new THREE.MeshPhongMaterial({ color: new THREE.Color(r - 0.1, g - 0.2, b - 0.2) }),
       ];
-    }, [skinColor]);
+    }, [r, g, b]);
     return (
       <group ref={ref}>
         {/* Head sphere */}

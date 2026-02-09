@@ -4,6 +4,7 @@
  * Called from the SSE endpoint's keepalive interval to piggyback on
  * a timer context that is known to work on Vercel.
  */
+import * as Sentry from "@sentry/nextjs";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
   acquireProcessingLock,
@@ -78,13 +79,14 @@ export async function checkForNewMessages(channelId: string = "late-night-ai"): 
     // If chat was quiet, broadcast "thinking" immediately so clients see Bob react
     const silenceMs = Date.now() - getLastActivityTimestamp();
     if (silenceMs > SILENCE_THRESHOLD_MS) {
-      emitAction({ type: "ai-thinking", id: "thinking-" + crypto.randomUUID() });
+      emitAction({ type: "ai-thinking", id: "thinking-" + crypto.randomUUID(), channelId });
     }
 
     touchActivity();
     await processChatBatch(batch, channelId);
   } catch (err) {
-    console.error("[chat-poller] Error:", err);
+    console.error("[chat-poller] Error polling channel:", channelId, err);
+    Sentry.captureException(err, { tags: { module: "chat-poller", channelId } });
   } finally {
     releaseProcessingLock();
   }

@@ -6,6 +6,7 @@ import "@/lib/proactive-speech"; // Start proactive monologues
 import { setActiveChannel } from "@/lib/proactive-speech";
 import { checkForNewMessages } from "@/lib/chat-poller";
 import { isShutdown } from "@/lib/service-config";
+import { getChannel } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,15 @@ const POLL_MS = 1_500;
 
 export async function GET(req: NextRequest) {
   const channelId = req.nextUrl.searchParams.get("channel") ?? "late-night-ai";
+
+  // Validate channel exists before opening SSE
+  if (!getChannel(channelId)) {
+    return new Response(
+      JSON.stringify({ error: `Unknown channel: ${channelId}` }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   setActiveChannel(channelId);
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | undefined;
@@ -32,6 +42,8 @@ export async function GET(req: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       const send = (event: ActionEvent) => {
+        // Filter: only forward events for this channel (or channel-agnostic events like maintenance)
+        if (event.channelId && event.channelId !== channelId) return;
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
@@ -60,6 +72,8 @@ export async function GET(req: NextRequest) {
             cleanup();
           }
         }
+      }).catch((err) => {
+        console.error("[sse] Failed to check shutdown status:", err);
       });
 
       // Register this viewer
