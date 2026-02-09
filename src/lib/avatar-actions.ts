@@ -241,6 +241,12 @@ const EMOTE_DEFS: Record<string, EmoteDef> = {
 
 // ── Build the full AVATAR_ACTIONS array ─────────────────────────────
 
+const EMOTE_DURATIONS: Record<string, string> = {
+  sleep: "continuous",
+  blink: "150ms",
+  spin: "2-10s (stackable)",
+};
+
 function buildEmoteActions(): AvatarAction[] {
   return Object.entries(EMOTE_DEFS).map(([key, def]) => ({
     id: `emote:${key}`,
@@ -248,7 +254,7 @@ function buildEmoteActions(): AvatarAction[] {
     name: def.name,
     tag: key.toUpperCase(),
     description: def.description,
-    duration: key === "sleep" ? "continuous" : key === "blink" ? "150ms" : key === "spin" ? "2-10s (stackable)" : "~2.6s",
+    duration: EMOTE_DURATIONS[key] ?? "~2.6s",
     constraints: def.constraints,
     aiVisible: def.aiVisible,
   }));
@@ -321,10 +327,13 @@ export function buildProactiveSystemPrompt(opts: {
   secondsSinceLastMessage: number;
 }): string {
   const { viewerCount, secondsSinceLastMessage } = opts;
-  const silenceDesc =
-    secondsSinceLastMessage < 60
-      ? `${Math.round(secondsSinceLastMessage)} seconds`
-      : `${Math.round(secondsSinceLastMessage / 60)} minute${Math.round(secondsSinceLastMessage / 60) === 1 ? "" : "s"}`;
+  let silenceDesc: string;
+  if (secondsSinceLastMessage < 60) {
+    silenceDesc = `${Math.round(secondsSinceLastMessage)} seconds`;
+  } else {
+    const mins = Math.round(secondsSinceLastMessage / 60);
+    silenceDesc = `${mins} minute${mins === 1 ? "" : "s"}`;
+  }
 
   return `
 

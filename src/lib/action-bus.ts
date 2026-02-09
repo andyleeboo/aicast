@@ -1,17 +1,23 @@
 import type { GameClientState } from "@/lib/games/game-types";
+import type { DonationTier } from "@/lib/types";
+
+export type ActionEventType =
+  | "gesture" | "emote" | "skill"
+  | "ai-response" | "ai-thinking" | "ai-audio" | "ai-audio-chunk" | "ai-audio-end"
+  | "maintenance-mode" | "reconnect" | "game-state" | "donation";
 
 export interface ActionEvent {
-  type: "gesture" | "emote" | "skill" | "ai-response" | "ai-thinking" | "ai-audio" | "ai-audio-chunk" | "ai-audio-end" | "maintenance-mode" | "reconnect" | "game-state" | "donation";
-  id: string; // e.g. "gesture:yes", "emote:wink", "skill:dramatic-zoom", or unique response id
+  type: ActionEventType;
+  id: string;
   response?: string;
   audioData?: string | null;
   gesture?: string;
   emote?: string | null;
   skillId?: string | null;
-  language?: string; // BCP-47 language code (e.g. "ko", "en") for TTS voice selection
-  active?: boolean; // maintenance-mode flag
-  gameState?: GameClientState; // game-state event payload
-  donationTier?: string;
+  language?: string;
+  active?: boolean;
+  gameState?: GameClientState;
+  donationTier?: DonationTier;
   donationAmount?: number;
   donationUsername?: string;
   donationContent?: string;
@@ -25,9 +31,7 @@ const GLOBAL_KEY = "__actionBusListeners" as const;
 
 function getListeners(): Set<ActionListener> {
   const g = globalThis as unknown as Record<string, Set<ActionListener>>;
-  if (!g[GLOBAL_KEY]) {
-    g[GLOBAL_KEY] = new Set<ActionListener>();
-  }
+  g[GLOBAL_KEY] ??= new Set<ActionListener>();
   return g[GLOBAL_KEY];
 }
 
@@ -56,9 +60,7 @@ const VIEWER_TTL_MS = 60_000; // Consider a viewer gone after 60s without heartb
 
 function getViewerMap(): Map<string, number> {
   const g = globalThis as unknown as Record<string, Map<string, number>>;
-  if (!g[VIEWER_KEY]) {
-    g[VIEWER_KEY] = new Map<string, number>();
-  }
+  g[VIEWER_KEY] ??= new Map<string, number>();
   return g[VIEWER_KEY];
 }
 

@@ -54,6 +54,11 @@ const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureRe
 
 const TIER_COSTS: Record<DonationTier, number> = { blue: 2, gold: 10, red: 50 };
 const TIER_ICONS: Record<DonationTier, string> = { blue: "\u{1F48E}", gold: "\u{1F3C6}", red: "\u{1F525}" };
+const TIER_BADGE_STYLES: Record<DonationTier, string> = {
+  blue: "bg-donation-blue/20 text-donation-blue",
+  gold: "bg-donation-gold/20 text-donation-gold",
+  red: "bg-donation-red/20 text-donation-red",
+};
 const COINS_KEY = "aicast_coins";
 const DEFAULT_COINS = 100;
 
@@ -105,27 +110,17 @@ export interface DonationEvent {
   donationContent: string;
 }
 
-function getDonationStyle(tier: DonationTier) {
-  switch (tier) {
-    case "blue":
-      return "border-l-2 border-donation-blue bg-donation-blue/10 pl-2 rounded-r";
-    case "gold":
-      return "border-l-2 border-donation-gold bg-donation-gold/10 pl-2 rounded-r";
-    case "red":
-      return "border-l-2 border-donation-red bg-donation-red/10 pl-2 rounded-r animate-[donation-glow_2s_ease-in-out_infinite]";
-  }
-}
+const DONATION_STYLES: Record<DonationTier, string> = {
+  blue: "border-l-2 border-donation-blue bg-donation-blue/10 pl-2 rounded-r",
+  gold: "border-l-2 border-donation-gold bg-donation-gold/10 pl-2 rounded-r",
+  red: "border-l-2 border-donation-red bg-donation-red/10 pl-2 rounded-r animate-[donation-glow_2s_ease-in-out_infinite]",
+};
 
-function getPinStyle(tier: DonationTier) {
-  switch (tier) {
-    case "gold":
-      return "border-donation-gold bg-donation-gold/15 text-donation-gold";
-    case "red":
-      return "border-donation-red bg-donation-red/15 text-donation-red";
-    default:
-      return "";
-  }
-}
+const PIN_STYLES: Record<DonationTier, string> = {
+  blue: "",
+  gold: "border-donation-gold bg-donation-gold/15 text-donation-gold",
+  red: "border-donation-red bg-donation-red/15 text-donation-red",
+};
 
 export function ChatPanel({
   channelId,
@@ -155,7 +150,7 @@ export function ChatPanel({
   const { pins, addPin } = usePinnedDonations();
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
-  const [lastDonationCount, setLastDonationCount] = useState(0);
+  const processedDonations = useRef(0);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -168,41 +163,41 @@ export function ChatPanel({
   // Handle SSE donation events from other viewers
   const donationLen = donations?.length ?? 0;
   useEffect(() => {
-    if (!donations || donationLen <= lastDonationCount) return;
-    const newDonations = donations.slice(lastDonationCount);
-    setLastDonationCount(donationLen);
+    if (!donations || donationLen <= processedDonations.current) return;
+    const newDonations = donations.slice(processedDonations.current);
+    processedDonations.current = donationLen;
 
-    for (const latest of newDonations) {
+    for (const d of newDonations) {
       // Add to messages (skip if already present from optimistic add)
       setMessages((prev) => {
-        if (prev.some((m) => m.id === latest.id)) return prev;
+        if (prev.some((m) => m.id === d.id)) return prev;
         return [
           ...prev,
           {
-            id: latest.id,
+            id: d.id,
             role: "user" as const,
-            content: latest.donationContent,
-            username: latest.donationUsername,
+            content: d.donationContent,
+            username: d.donationUsername,
             timestamp: Date.now(),
-            donationTier: latest.donationTier,
-            donationAmount: latest.donationAmount,
+            donationTier: d.donationTier,
+            donationAmount: d.donationAmount,
           },
         ];
       });
 
       // Pin Gold/Red
-      if (latest.donationTier === "gold" || latest.donationTier === "red") {
+      if (d.donationTier === "gold" || d.donationTier === "red") {
         addPin({
-          id: latest.id,
-          username: latest.donationUsername,
-          content: latest.donationContent,
-          tier: latest.donationTier,
-          amount: latest.donationAmount,
+          id: d.id,
+          username: d.donationUsername,
+          content: d.donationContent,
+          tier: d.donationTier,
+          amount: d.donationAmount,
         });
       }
 
       // Trigger confetti
-      setConfettiMsgs((prev) => new Set(prev).add(latest.id));
+      setConfettiMsgs((prev) => new Set(prev).add(d.id));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [donationLen]);
@@ -310,6 +305,34 @@ export function ChatPanel({
     };
   }, [channelId]);
 
+  function addSystemMessage(content: string): void {
+    setMessages((prev) => [...prev, {
+      id: crypto.randomUUID(),
+      role: "system" as const,
+      content,
+      timestamp: Date.now(),
+    }]);
+  }
+
+  function sendGameCommand(
+    command: string,
+    body: Record<string, string>,
+    formatResponse: (data: Record<string, unknown>) => string,
+  ): void {
+    setInput("");
+    trackEvent("slash_command_used", { command });
+    fetch("/api/game", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        addSystemMessage(data.error ? data.error : formatResponse(data));
+      })
+      .catch(() => {});
+  }
+
   async function send() {
     const text = input.trim();
     if (!text) return;
@@ -318,167 +341,62 @@ export function ChatPanel({
     // Game commands
     const lower = text.toLowerCase();
     if (lower === "/hangman") {
-      setInput("");
-      trackEvent("slash_command_used", { command: "/hangman" });
-      fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start", game: "hangman" }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          const msg = data.error
-            ? data.error
-            : `${username} started a game of Hangman! Type /guess <letter> to play`;
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(), role: "system" as const,
-            content: msg, timestamp: Date.now(),
-          }]);
-        })
-        .catch(() => {});
+      sendGameCommand("/hangman", { action: "start", game: "hangman" }, () =>
+        `${username} started a game of Hangman! Type /guess <letter> to play`,
+      );
       return;
     }
 
     if (lower.startsWith("/guess ")) {
       const value = text.slice(7).trim();
       if (!value) return;
-      setInput("");
-      trackEvent("slash_command_used", { command: "/guess" });
-      fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "guess", value }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.error) {
-            setMessages((prev) => [...prev, {
-              id: crypto.randomUUID(), role: "system" as const,
-              content: data.error, timestamp: Date.now(),
-            }]);
-            return;
-          }
-          const label = value.length === 1 ? value.toUpperCase() : `"${value}"`;
-          const msg = data.correct
-            ? `${username} guessed ${label} — correct!`
-            : `${username} guessed ${label} — wrong!`;
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(), role: "system" as const,
-            content: msg, timestamp: Date.now(),
-          }]);
-        })
-        .catch(() => {});
+      const label = value.length === 1 ? value.toUpperCase() : `"${value}"`;
+      sendGameCommand("/guess", { action: "guess", value }, (data) =>
+        data.correct
+          ? `${username} guessed ${label} — correct!`
+          : `${username} guessed ${label} — wrong!`,
+      );
       return;
     }
 
     if (lower === "/20q") {
-      setInput("");
-      trackEvent("slash_command_used", { command: "/20q" });
-      fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start", game: "twentyq" }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          const msg = data.error
-            ? data.error
-            : `${username} started 20 Questions! Type /ask <question> to play`;
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(), role: "system" as const,
-            content: msg, timestamp: Date.now(),
-          }]);
-        })
-        .catch(() => {});
+      sendGameCommand("/20q", { action: "start", game: "twentyq" }, () =>
+        `${username} started 20 Questions! Type /ask <question> to play`,
+      );
       return;
     }
 
     if (lower.startsWith("/ask ")) {
       const value = text.slice(5).trim();
       if (!value) return;
-      setInput("");
-      trackEvent("slash_command_used", { command: "/ask" });
-      fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ask", value }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.error) {
-            setMessages((prev) => [...prev, {
-              id: crypto.randomUUID(), role: "system" as const,
-              content: data.error, timestamp: Date.now(),
-            }]);
-            return;
-          }
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(), role: "system" as const,
-            content: `${username} asked: "${value}" — waiting for Bob...`, timestamp: Date.now(),
-          }]);
-        })
-        .catch(() => {});
+      sendGameCommand("/ask", { action: "ask", value }, () =>
+        `${username} asked: "${value}" — waiting for Bob...`,
+      );
       return;
     }
 
     if (lower.startsWith("/answer ")) {
       const value = text.slice(8).trim();
       if (!value) return;
-      setInput("");
-      trackEvent("slash_command_used", { command: "/answer" });
-      fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "answer", value }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.error) {
-            setMessages((prev) => [...prev, {
-              id: crypto.randomUUID(), role: "system" as const,
-              content: data.error, timestamp: Date.now(),
-            }]);
-            return;
-          }
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(), role: "system" as const,
-            content: `${username} guesses: "${value}" — Bob is thinking...`, timestamp: Date.now(),
-          }]);
-        })
-        .catch(() => {});
+      sendGameCommand("/answer", { action: "answer", value }, () =>
+        `${username} guesses: "${value}" — Bob is thinking...`,
+      );
       return;
     }
 
     if (lower === "/endgame") {
-      setInput("");
-      trackEvent("slash_command_used", { command: "/endgame" });
-      fetch("/api/game", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "stop" }),
-      })
-        .then(() => {
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(), role: "system" as const,
-            content: `${username} ended the game`, timestamp: Date.now(),
-          }]);
-        })
-        .catch(() => {});
+      sendGameCommand("/endgame", { action: "stop" }, () =>
+        `${username} ended the game`,
+      );
       return;
     }
 
     // Slash commands — bypass API
-    const slashCmd = SLASH_COMMANDS[text.toLowerCase()];
+    const slashCmd = SLASH_COMMANDS[lower];
     if (slashCmd) {
-      const systemMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "system",
-        content: slashCmd.msg.replace("{name}", streamerName),
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, systemMsg]);
+      addSystemMessage(slashCmd.msg.replace("{name}", streamerName));
       setInput("");
-      trackEvent("slash_command_used", { command: text.toLowerCase() });
+      trackEvent("slash_command_used", { command: lower });
       if (slashCmd.emote) onEmote?.(slashCmd.emote);
       if (slashCmd.gesture) onGesture?.(slashCmd.gesture);
       return;
@@ -578,7 +496,7 @@ export function ChatPanel({
           {pins.map((pin) => (
             <div
               key={pin.id}
-              className={`rounded-lg border px-3 py-1.5 text-xs ${getPinStyle(pin.tier)}`}
+              className={`rounded-lg border px-3 py-1.5 text-xs ${PIN_STYLES[pin.tier]}`}
             >
               <span className="font-semibold">{TIER_ICONS[pin.tier]} ${pin.amount} {pin.username}:</span>{" "}
               {pin.content}
@@ -595,7 +513,7 @@ export function ChatPanel({
               {msg.role === "system" ? (
                 <span className="text-sm italic text-yellow-400">{msg.content}</span>
               ) : (
-                <div className={msg.donationTier ? `py-1.5 ${getDonationStyle(msg.donationTier)}` : ""}>
+                <div className={msg.donationTier ? `py-1.5 ${DONATION_STYLES[msg.donationTier]}` : ""}>
                   <div className="flex items-baseline gap-1.5">
                     {msg.donationTier && (
                       <span className="text-xs">
@@ -635,11 +553,7 @@ export function ChatPanel({
         )}
         {selectedTier && (
           <div className="mb-2 flex items-center gap-2 text-xs">
-            <span className={`rounded px-2 py-0.5 font-semibold ${
-              selectedTier === "red" ? "bg-donation-red/20 text-donation-red"
-                : selectedTier === "gold" ? "bg-donation-gold/20 text-donation-gold"
-                : "bg-donation-blue/20 text-donation-blue"
-            }`}>
+            <span className={`rounded px-2 py-0.5 font-semibold ${TIER_BADGE_STYLES[selectedTier]}`}>
               {TIER_ICONS[selectedTier]} ${TIER_COSTS[selectedTier]} Super Chat
             </span>
             <button

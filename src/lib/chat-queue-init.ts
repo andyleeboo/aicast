@@ -37,20 +37,25 @@ const tagToGesture: Record<string, GestureReaction> = {
   TILT: "uncertain",
 };
 
-const tagToEmote: Record<string, EmoteCommand> = {};
-for (const action of AVATAR_ACTIONS) {
-  if (action.type === "emote") {
-    tagToEmote[action.tag] = action.id.split(":")[1] as EmoteCommand;
-  }
+const tagToEmote: Record<string, EmoteCommand> = Object.fromEntries(
+  AVATAR_ACTIONS
+    .filter((a) => a.type === "emote")
+    .map((a) => [a.tag, a.id.split(":")[1] as EmoteCommand]),
+);
+
+const tagToSkill: Record<string, string> = Object.fromEntries(
+  PERFORMANCE_SKILLS.map((s) => [s.tag, s.id]),
+);
+
+interface ParsedTags {
+  response: string;
+  gesture: GestureReaction;
+  emote: EmoteCommand | null;
+  skillId: string | null;
+  language: string | undefined;
 }
 
-const tagToSkill: Record<string, string> = {};
-for (const skill of PERFORMANCE_SKILLS) {
-  tagToSkill[skill.tag] = skill.id;
-}
-
-export function parseTags(raw: string) {
-  // Strip leading junk (thinking artifacts like "_\n", "}\n", whitespace)
+export function parseTags(raw: string): ParsedTags {
   let remaining = raw.replace(/^[\s_{}*#]+/, "");
   let gesture: GestureReaction = "uncertain";
   let emote: EmoteCommand | null = null;
@@ -108,6 +113,11 @@ const PRIORITY_ORDER: Record<string, number> = {
   normal: 2,
 };
 
+const TIER_LABELS: Record<string, string> = {
+  red: " RED MEGA",
+  gold: " GOLD",
+};
+
 export function formatBatchForAI(batch: BatchedChatMessage[]): string {
   const sorted = [...batch].sort(
     (a, b) =>
@@ -117,9 +127,7 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
   const lines = sorted.map((msg) => {
     let prefix = "";
     if (msg.priority === "donation" && msg.donationAmount) {
-      const tierLabel = msg.donationTier === "red" ? " RED MEGA"
-                      : msg.donationTier === "gold" ? " GOLD"
-                      : "";
+      const tierLabel = TIER_LABELS[msg.donationTier ?? ""] ?? "";
       prefix = `[SUPERCHAT $${msg.donationAmount}${tierLabel}] `;
     } else if (msg.priority === "highlight") {
       prefix = "[HIGHLIGHTED] ";

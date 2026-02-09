@@ -318,16 +318,16 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         }
 
         if (data.type === "donation") {
-          const donationEvent: DonationEvent = {
+          const event: DonationEvent = {
             id: data.id,
-            donationTier: data.donationTier as DonationTier,
+            donationTier: data.donationTier,
             donationAmount: data.donationAmount,
             donationUsername: data.donationUsername,
             donationContent: data.donationContent,
           };
-          setDonations((prev) => [...prev, donationEvent]);
-          playDonationSound(donationEvent.donationTier);
-          trackEvent("donation_received", { tier: data.donationTier, amount: data.donationAmount });
+          setDonations((prev) => [...prev, event]);
+          playDonationSound(event.donationTier);
+          trackEvent("donation_received", { tier: event.donationTier, amount: event.donationAmount });
           return;
         }
 
