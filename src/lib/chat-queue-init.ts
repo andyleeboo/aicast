@@ -140,9 +140,7 @@ export function formatBatchForAI(batch: BatchedChatMessage[]): string {
 
 // ── Core batch processing (used by both flush handler and Supabase poller) ──
 
-const STREAMER_ID = "late-night-ai";
-
-export async function processChatBatch(batch: BatchedChatMessage[]): Promise<void> {
+export async function processChatBatch(batch: BatchedChatMessage[], channelId: string = "late-night-ai"): Promise<void> {
   if (isShutdownSync()) {
     console.log("[chat-queue-init] Shutdown mode — skipping AI response");
     return;
@@ -150,9 +148,9 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
 
   const responseId = crypto.randomUUID();
 
-  const channel = await getChannelFromDB(STREAMER_ID);
+  const channel = await getChannelFromDB(channelId);
   if (!channel) {
-    console.error("[chat-queue-init] Channel not found:", STREAMER_ID);
+    console.error("[chat-queue-init] Channel not found:", channelId);
     return;
   }
 
@@ -185,7 +183,7 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
   } catch (err) {
     console.error("[chat-queue-init] Gemini API error:", err);
     // Clear "thinking" on the client so it doesn't hang
-    emitAction({ type: "ai-audio-end", id: responseId });
+    emitAction({ type: "ai-audio-end", id: responseId, channelId });
     return;
   }
 
@@ -194,7 +192,7 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
   // Skip empty responses (Gemini sometimes returns only tags or whitespace)
   if (!response) {
     console.warn("[chat-queue-init] Empty response after parsing, skipping");
-    emitAction({ type: "ai-audio-end", id: responseId });
+    emitAction({ type: "ai-audio-end", id: responseId, channelId });
     return;
   }
 
@@ -215,17 +213,20 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
   // Persist to Supabase (fire-and-forget — don't block SSE/TTS)
   const supabase = createServerSupabaseClient();
   if (supabase) {
-    supabase
-      .from("messages")
-      .insert({
-        channel_id: STREAMER_ID,
-        role: "assistant",
-        content: response,
-        username: channel.streamer.name,
-      })
-      .then(({ error }) => {
-        if (error) console.error("[chat-queue-init] Supabase insert error:", error.message);
-      });
+    Promise.resolve(
+      supabase
+        .from("messages")
+        .insert({
+          channel_id: channelId,
+          role: "assistant",
+          content: response,
+          username: channel.streamer.name,
+        }),
+    ).then(({ error }) => {
+      if (error) console.error("[chat-queue-init] Supabase insert error:", error.message);
+    }).catch((err) => {
+      console.error("[chat-queue-init] Supabase insert threw:", err);
+    });
   }
 
   // Pause idle — avatar is about to animate
@@ -235,6 +236,7 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
   emitAction({
     type: "ai-response",
     id: responseId,
+    channelId,
     response,
     gesture,
     emote,
@@ -242,18 +244,18 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
     language,
   });
 
-  console.log(`[chat-queue-init] Bob responded to ${batch.length} message(s): ${response.substring(0, 80)}...`);
+  console.log(`[chat-queue-init] ${channel.streamer.name} responded to ${batch.length} message(s): ${response.substring(0, 80)}...`);
 
   // Step 2: Stream audio via Live API (non-blocking — audio plays while text is shown)
   streamSpeech(response, (chunk) => {
-    emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
-  })
+    emitAction({ type: "ai-audio-chunk", id: responseId, channelId, audioData: chunk });
+  }, channel.streamer.ttsVoice)
     .then(() => {
-      emitAction({ type: "ai-audio-end", id: responseId });
+      emitAction({ type: "ai-audio-end", id: responseId, channelId });
     })
     .catch((err) => {
       console.error("[chat-queue-init] Live API TTS error:", err);
-      emitAction({ type: "ai-audio-end", id: responseId });
+      emitAction({ type: "ai-audio-end", id: responseId, channelId });
     })
     .finally(() => {
       resumeIdle();
@@ -262,4 +264,8 @@ export async function processChatBatch(batch: BatchedChatMessage[]): Promise<voi
 
 // Register as flush handler for backward compat (only works when caller
 // shares the same globalThis, e.g. within the SSE endpoint).
-setFlushHandler(processChatBatch);
+// Uses dynamic import to avoid circular dependency with proactive-speech.
+setFlushHandler(async (batch) => {
+  const { getActiveChannelId } = await import("@/lib/proactive-speech");
+  return processChatBatch(batch, getActiveChannelId());
+});

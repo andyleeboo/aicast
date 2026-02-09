@@ -1,5 +1,5 @@
 /**
- * Side-effect module: Bob speaks unprompted when viewers are watching but chat is quiet.
+ * Side-effect module: the active streamer speaks unprompted when viewers are watching but chat is quiet.
  * Import this module to auto-start the proactive speech loop.
  */
 import { getViewerCount, emitAction } from "@/lib/action-bus";
@@ -29,7 +29,19 @@ import type { ChatMessage } from "@/lib/types";
 const MIN_SILENCE_MS = 45_000;
 const MAX_SILENCE_MS = 90_000;
 const CHECK_INTERVAL_MS = 5_000;
-const STREAMER_ID = "late-night-ai";
+
+let activeChannelId = "late-night-ai";
+
+export function setActiveChannel(channelId: string) {
+  if (activeChannelId !== channelId) {
+    console.log(`[proactive-speech] Active channel: "${activeChannelId}" → "${channelId}"`);
+  }
+  activeChannelId = channelId;
+}
+
+export function getActiveChannelId(): string {
+  return activeChannelId;
+}
 
 interface ProactiveState {
   timer: ReturnType<typeof setInterval> | null;
@@ -83,9 +95,9 @@ async function maybeSpeakProactively() {
   state.nextSpeakAt = now + randomDelay();
 
   try {
-    const channel = await getChannelFromDB(STREAMER_ID);
+    const channel = await getChannelFromDB(activeChannelId);
     if (!channel) {
-      console.error("[proactive-speech] Channel not found:", STREAMER_ID);
+      console.error("[proactive-speech] Channel not found:", activeChannelId);
       return;
     }
 
@@ -133,17 +145,20 @@ async function maybeSpeakProactively() {
     // Persist to Supabase (fire-and-forget — don't block SSE/TTS)
     const supabase = createServerSupabaseClient();
     if (supabase) {
-      supabase
-        .from("messages")
-        .insert({
-          channel_id: STREAMER_ID,
-          role: "assistant",
-          content: response,
-          username: channel.streamer.name,
-        })
-        .then(({ error }) => {
-          if (error) console.error("[proactive-speech] Supabase insert error:", error.message);
-        });
+      Promise.resolve(
+        supabase
+          .from("messages")
+          .insert({
+            channel_id: activeChannelId,
+            role: "assistant",
+            content: response,
+            username: channel.streamer.name,
+          }),
+      ).then(({ error }) => {
+        if (error) console.error("[proactive-speech] Supabase insert error:", error.message);
+      }).catch((err) => {
+        console.error("[proactive-speech] Supabase insert threw:", err);
+      });
     }
 
     // Update activity so we don't immediately trigger again
@@ -156,6 +171,7 @@ async function maybeSpeakProactively() {
     emitAction({
       type: "ai-response",
       id: responseId,
+      channelId: activeChannelId,
       response,
       gesture,
       emote,
@@ -165,21 +181,21 @@ async function maybeSpeakProactively() {
 
     // Stream audio via Live API
     streamSpeech(response, (chunk) => {
-      emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
-    })
+      emitAction({ type: "ai-audio-chunk", id: responseId, channelId: activeChannelId, audioData: chunk });
+    }, channel.streamer.ttsVoice)
       .then(() => {
-        emitAction({ type: "ai-audio-end", id: responseId });
+        emitAction({ type: "ai-audio-end", id: responseId, channelId: activeChannelId });
       })
       .catch((err) => {
         console.error("[proactive-speech] Live API TTS error:", err);
-        emitAction({ type: "ai-audio-end", id: responseId });
+        emitAction({ type: "ai-audio-end", id: responseId, channelId: activeChannelId });
       })
       .finally(() => {
         resumeIdle();
       });
 
     console.log(
-      `[proactive-speech] Bob spoke (${viewerCount} viewers, ${Math.round(silenceMs / 1000)}s silence): ${response.substring(0, 80)}...`,
+      `[proactive-speech] ${channel.streamer.name} spoke (${viewerCount} viewers, ${Math.round(silenceMs / 1000)}s silence): ${response.substring(0, 80)}...`,
     );
   } finally {
     releaseProcessingLock();

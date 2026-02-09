@@ -4,6 +4,7 @@
  * Called from the SSE endpoint's keepalive interval to piggyback on
  * a timer context that is known to work on Vercel.
  */
+import * as Sentry from "@sentry/nextjs";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
   acquireProcessingLock,
@@ -23,7 +24,7 @@ let lastPollAt = new Date().toISOString();
 const processedIds = new Set<string>();
 
 /** Check Supabase for new chat messages and process any found. */
-export async function checkForNewMessages(): Promise<void> {
+export async function checkForNewMessages(channelId: string = "late-night-ai"): Promise<void> {
   if (!acquireProcessingLock()) return;
 
   try {
@@ -34,6 +35,7 @@ export async function checkForNewMessages(): Promise<void> {
       .from("messages")
       .select("*")
       .eq("role", "user")
+      .eq("channel_id", channelId)
       .gt("created_at", lastPollAt)
       .order("created_at", { ascending: true })
       .limit(20);
@@ -77,13 +79,14 @@ export async function checkForNewMessages(): Promise<void> {
     // If chat was quiet, broadcast "thinking" immediately so clients see Bob react
     const silenceMs = Date.now() - getLastActivityTimestamp();
     if (silenceMs > SILENCE_THRESHOLD_MS) {
-      emitAction({ type: "ai-thinking", id: "thinking-" + crypto.randomUUID() });
+      emitAction({ type: "ai-thinking", id: "thinking-" + crypto.randomUUID(), channelId });
     }
 
     touchActivity();
-    await processChatBatch(batch);
+    await processChatBatch(batch, channelId);
   } catch (err) {
-    console.error("[chat-poller] Error:", err);
+    console.error("[chat-poller] Error polling channel:", channelId, err);
+    Sentry.captureException(err, { tags: { module: "chat-poller", channelId } });
   } finally {
     releaseProcessingLock();
   }

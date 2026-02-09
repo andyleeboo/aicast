@@ -294,8 +294,8 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
       osc.start();
       osc.stop(ctx.currentTime + 0.5);
-    } catch {
-      // AudioContext may not be available
+    } catch (err) {
+      console.warn("[donation-sound] AudioContext error:", err);
     }
   }, []);
 
@@ -345,14 +345,14 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     fetch("/api/game")
       .then((r) => r.json())
       .then((data) => { if (data.state) handleGameState(data.state); })
-      .catch(() => {});
+      .catch((err) => { console.warn("[broadcast] Failed to fetch initial game state:", err); });
   }, [handleGameState]);
 
   // Subscribe to SSE for remote-triggered actions and AI responses
   // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {
-    console.log("[sse] Connecting to /api/avatar/events");
-    const es = new EventSource("/api/avatar/events");
+    console.log(`[sse] Connecting to /api/avatar/events?channel=${channel.id}`);
+    const es = new EventSource(`/api/avatar/events?channel=${channel.id}`);
 
     es.onopen = () => { console.log("[sse] Connected"); setSseConnected(true); };
     es.onerror = (e) => { console.warn("[sse] Error/disconnected, readyState:", es.readyState, e); setSseConnected(false); };
@@ -468,8 +468,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         } else if (data.type === "emote") {
           handleEmote(value as EmoteCommand);
         }
-      } catch {
-        // Ignore malformed events
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          console.warn("[sse] Malformed event data:", event.data?.substring(0, 100));
+        } else {
+          console.error("[sse] Error processing event:", err);
+        }
       }
     };
 
@@ -477,7 +481,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       es.close();
       if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
     };
-  }, [handleEmote, handleAudioChunk, handleAudioEnd, activateSkill, playDonationSound]);
+  }, [channel.id, handleEmote, handleAudioChunk, handleAudioEnd, activateSkill, playDonationSound]);
 
   // --- Draggable divider logic (mobile: vertical, desktop: horizontal) ---
   const [dragging, setDragging] = useState(false);
@@ -564,6 +568,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onEmoteComplete={handleEmoteComplete}
             isSpeaking={bubble.isSpeaking}
             scenePose={scenePose}
+            skinColor={channel.streamer.skinColor}
           />
           {gameState && <GameOverlay gameState={gameState} />}
         </div>

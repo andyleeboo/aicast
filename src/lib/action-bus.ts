@@ -9,6 +9,7 @@ export type ActionEventType =
 export interface ActionEvent {
   type: ActionEventType;
   id: string;
+  channelId?: string;
   response?: string;
   audioData?: string | null;
   gesture?: string;

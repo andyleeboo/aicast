@@ -12,6 +12,7 @@ interface HeadSceneProps {
   onEmoteComplete: () => void;
   isSpeaking: boolean;
   scenePose?: Partial<ScenePose> | null;
+  skinColor?: [number, number, number];
 }
 
 export function HeadScene({
@@ -21,6 +22,7 @@ export function HeadScene({
   onEmoteComplete,
   isSpeaking,
   scenePose,
+  skinColor,
 }: HeadSceneProps) {
   const headRef = useRef<THREE.Group>(null);
   const leftEyeRef = useRef<THREE.Mesh>(null);
@@ -71,12 +73,14 @@ export function HeadScene({
         color="#4d4d4d"
       />
 
-      <HeadGeometry
-        ref={headRef}
-        leftEyeRef={leftEyeRef}
-        rightEyeRef={rightEyeRef}
-        mouthRef={mouthRef}
-      />
+      <group ref={headRef}>
+        <HeadGeometry
+          leftEyeRef={leftEyeRef}
+          rightEyeRef={rightEyeRef}
+          mouthRef={mouthRef}
+          skinColor={skinColor}
+        />
+      </group>
     </>
   );
 }

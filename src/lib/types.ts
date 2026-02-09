@@ -6,6 +6,8 @@ export interface Streamer {
   personality: string;
   avatarUrl: string;
   model: "flash" | "pro";
+  skinColor: [number, number, number];
+  ttsVoice?: string;
 }
 
 export interface Channel {
