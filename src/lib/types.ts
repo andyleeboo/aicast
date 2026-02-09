@@ -7,7 +7,6 @@ export interface Streamer {
   avatarUrl: string;
   model: "flash" | "pro";
   skinColor: [number, number, number];
-  hairColor: [number, number, number];
   ttsVoice?: string;
 }
 

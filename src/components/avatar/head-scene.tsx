@@ -1,7 +1,6 @@
 import { useRef, useEffect } from "react";
 import * as THREE from "three";
 import { HeadGeometry } from "./head-geometry";
-import { HairStrands } from "./hair-strands";
 import { useFaceAnimation } from "./use-face-animation";
 import type { ScenePose } from "./face-controller";
 import type { GestureReaction, EmoteCommand } from "@/lib/types";
@@ -14,8 +13,6 @@ interface HeadSceneProps {
   isSpeaking: boolean;
   scenePose?: Partial<ScenePose> | null;
   skinColor?: [number, number, number];
-  hairColor?: [number, number, number];
-  showBeard?: boolean;
 }
 
 export function HeadScene({
@@ -26,8 +23,6 @@ export function HeadScene({
   isSpeaking,
   scenePose,
   skinColor,
-  hairColor,
-  showBeard,
 }: HeadSceneProps) {
   const headRef = useRef<THREE.Group>(null);
   const leftEyeRef = useRef<THREE.Mesh>(null);
@@ -85,7 +80,6 @@ export function HeadScene({
           mouthRef={mouthRef}
           skinColor={skinColor}
         />
-        <HairStrands hairColor={hairColor} showBeard={showBeard} />
       </group>
     </>
   );

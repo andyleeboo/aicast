@@ -565,8 +565,6 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             isSpeaking={bubble.isSpeaking}
             scenePose={scenePose}
             skinColor={channel.streamer.skinColor}
-            hairColor={channel.streamer.hairColor}
-            showBeard={channel.id === "late-night-ai"}
           />
           {gameState && <GameOverlay gameState={gameState} />}
         </div>

@@ -13,8 +13,6 @@ interface AvatarCanvasProps {
   isSpeaking: boolean;
   scenePose?: Partial<ScenePose> | null;
   skinColor?: [number, number, number];
-  hairColor?: [number, number, number];
-  showBeard?: boolean;
 }
 
 export function AvatarCanvas({
@@ -25,8 +23,6 @@ export function AvatarCanvas({
   isSpeaking,
   scenePose,
   skinColor,
-  hairColor,
-  showBeard,
 }: AvatarCanvasProps) {
   return (
     <div className="relative h-full w-full">
@@ -49,8 +45,6 @@ export function AvatarCanvas({
           isSpeaking={isSpeaking}
           scenePose={scenePose}
           skinColor={skinColor}
-          hairColor={hairColor}
-          showBeard={showBeard}
         />
       </Canvas>
     </div>
