@@ -62,6 +62,13 @@ export function useSpeechBubble(): UseSpeechBubbleReturn {
   const showLoading = useCallback(() => {
     clearAllTimers();
     setText("...");
+    // Safety net: auto-clear "..." if server never responds (matches showResponse pattern)
+    safetyTimer.current = setTimeout(() => {
+      if (!maintenanceRef.current) {
+        setText(null);
+        setIsSpeaking(false);
+      }
+    }, SAFETY_NET_MS);
   }, [clearAllTimers]);
 
   const showResponse = useCallback((response: string) => {

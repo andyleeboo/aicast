@@ -7,6 +7,7 @@ import { setActiveChannel } from "@/lib/proactive-speech";
 import { checkForNewMessages } from "@/lib/chat-poller";
 import { isShutdown } from "@/lib/service-config";
 import { getChannel } from "@/lib/mock-data";
+import { maybeGreetViewer } from "@/lib/viewer-greeting";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
   let unsubscribe: (() => void) | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let gracefulTimeout: ReturnType<typeof setTimeout> | undefined;
+  let greetTimeout: ReturnType<typeof setTimeout> | undefined;
   const viewerId = crypto.randomUUID();
 
   const stream = new ReadableStream({
@@ -112,6 +114,12 @@ export async function GET(req: NextRequest) {
         }
       }, POLL_MS);
 
+      // Greet the viewer after a short delay so the client has time to
+      // establish the SSE connection and render the avatar.
+      greetTimeout = setTimeout(() => {
+        maybeGreetViewer(channelId);
+      }, 3_000);
+
       // Graceful self-close before Vercel kills us.
       gracefulTimeout = setTimeout(() => {
         try {
@@ -134,10 +142,12 @@ export async function GET(req: NextRequest) {
     unsubscribe?.();
     if (pollTimer) clearInterval(pollTimer);
     if (gracefulTimeout) clearTimeout(gracefulTimeout);
+    if (greetTimeout) clearTimeout(greetTimeout);
     removeViewer(viewerId);
     unsubscribe = undefined;
     pollTimer = undefined;
     gracefulTimeout = undefined;
+    greetTimeout = undefined;
   }
 
   return new Response(stream, {

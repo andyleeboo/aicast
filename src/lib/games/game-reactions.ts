@@ -77,6 +77,7 @@ export async function triggerGameReaction(gameState: GameState): Promise<void> {
     emitAction({
       type: "ai-response",
       id: responseId,
+      channelId: STREAMER_ID,
       response,
       gesture,
       emote,
@@ -85,12 +86,12 @@ export async function triggerGameReaction(gameState: GameState): Promise<void> {
     });
 
     streamSpeech(response, (chunk) => {
-      emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
+      emitAction({ type: "ai-audio-chunk", id: responseId, channelId: STREAMER_ID, audioData: chunk });
     })
-      .then(() => emitAction({ type: "ai-audio-end", id: responseId }))
+      .then(() => emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID }))
       .catch((err) => {
         console.error("[game-reactions] TTS error:", err);
-        emitAction({ type: "ai-audio-end", id: responseId });
+        emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID });
       })
       .finally(() => resumeIdle());
 
@@ -157,16 +158,17 @@ export async function triggerTwentyQQuestionReaction(
       emitAction({
         type: "ai-response",
         id: responseId,
+        channelId: STREAMER_ID,
         response,
       });
 
       streamSpeech(response, (chunk) => {
-        emitAction({ type: "ai-audio-chunk", id: responseId, audioData: chunk });
+        emitAction({ type: "ai-audio-chunk", id: responseId, channelId: STREAMER_ID, audioData: chunk });
       })
-        .then(() => emitAction({ type: "ai-audio-end", id: responseId }))
+        .then(() => emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID }))
         .catch((err) => {
           console.error("[game-reactions:20q] TTS error:", err);
-          emitAction({ type: "ai-audio-end", id: responseId });
+          emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID });
         })
         .finally(() => resumeIdle());
 

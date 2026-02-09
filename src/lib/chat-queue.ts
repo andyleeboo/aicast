@@ -14,6 +14,7 @@ interface ChatQueueState {
   debounceTimer: ReturnType<typeof setTimeout> | null;
   capTimer: ReturnType<typeof setTimeout> | null;
   processing: boolean;
+  lockAcquiredAt: number;
   flushHandler: FlushHandler | null;
   lastActivityTimestamp: number;
 }
@@ -29,6 +30,7 @@ function getState(): ChatQueueState {
       debounceTimer: null,
       capTimer: null,
       processing: false,
+      lockAcquiredAt: 0,
       flushHandler: null,
       lastActivityTimestamp: Date.now(),
     };
@@ -118,11 +120,24 @@ export function isProcessing(): boolean {
   return getState().processing;
 }
 
+/** Max time a lock can be held before it's considered stale (ms). */
+const STALE_LOCK_MS = 30_000;
+
 /** Try to acquire the processing lock. Returns true if acquired, false if already held. */
 export function acquireProcessingLock(): boolean {
   const state = getState();
-  if (state.processing) return false;
+  if (state.processing) {
+    // Force-release stale locks (e.g. Gemini call hung, Vercel killed process)
+    const elapsed = Date.now() - state.lockAcquiredAt;
+    if (elapsed > STALE_LOCK_MS) {
+      console.warn(`[chat-queue] Force-releasing stale lock held for ${(elapsed / 1000).toFixed(1)}s`);
+      state.processing = false;
+    } else {
+      return false;
+    }
+  }
   state.processing = true;
+  state.lockAcquiredAt = Date.now();
   return true;
 }
 
