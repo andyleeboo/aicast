@@ -31,5 +31,6 @@ export function useViewerCount(_channelId: string): number {
     };
   }, []);
 
-  return count;
+  // The person viewing the page is always a viewer — never show 0
+  return Math.max(1, count);
 }
