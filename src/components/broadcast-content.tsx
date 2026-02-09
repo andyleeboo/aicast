@@ -292,6 +292,15 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const handleGameState = useCallback((gs: GameClientState) => {
     setGameState(gs);
 
+    // Analytics: track game lifecycle
+    if (gs.status === "playing" && !gameState) {
+      trackEvent("game_started", { game_type: gs.type, game_id: gs.gameId });
+    } else if (gs.status === "won") {
+      trackEvent("game_won", { game_type: gs.type, game_id: gs.gameId });
+    } else if (gs.status === "lost") {
+      trackEvent("game_lost", { game_type: gs.type, game_id: gs.gameId });
+    }
+
     if (gs.status === "playing") {
       // On mobile, move Bob off-screen (game overlay covers full canvas);
       // on desktop, slide left to make room for the game panel.

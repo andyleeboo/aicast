@@ -357,11 +357,12 @@ export function ChatPanel({
       const value = text.slice(7).trim();
       if (!value) return;
       const label = value.length === 1 ? value.toUpperCase() : `"${value}"`;
-      sendGameCommand("/guess", { action: "guess", value }, (data) =>
-        data.correct
+      sendGameCommand("/guess", { action: "guess", value }, (data) => {
+        trackEvent("game_guess", { game: "hangman", value, correct: !!data.correct });
+        return data.correct
           ? `${username} guessed ${label} — correct!`
-          : `${username} guessed ${label} — wrong!`,
-      );
+          : `${username} guessed ${label} — wrong!`;
+      });
       return;
     }
 
@@ -375,6 +376,7 @@ export function ChatPanel({
     if (lower.startsWith("/ask ")) {
       const value = text.slice(5).trim();
       if (!value) return;
+      trackEvent("game_question", { game: "twentyq", type: "ask" });
       sendGameCommand("/ask", { action: "ask", value }, () =>
         `${username} asked: "${value}" — waiting for Bob...`,
       );
@@ -384,6 +386,7 @@ export function ChatPanel({
     if (lower.startsWith("/answer ")) {
       const value = text.slice(8).trim();
       if (!value) return;
+      trackEvent("game_question", { game: "twentyq", type: "answer" });
       sendGameCommand("/answer", { action: "answer", value }, () =>
         `${username} guesses: "${value}" — Bob is thinking...`,
       );
