@@ -288,6 +288,34 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }
   }, []);
 
+  // Handle game state updates (called from SSE events AND from direct API responses)
+  const handleGameState = useCallback((gs: GameClientState) => {
+    setGameState(gs);
+
+    if (gs.status === "playing") {
+      // On mobile, move Bob off-screen (game overlay covers full canvas);
+      // on desktop, slide left to make room for the game panel.
+      const isMobile = window.innerWidth < 1024;
+      setScenePose(
+        isMobile
+          ? { x: 3.5, y: -2.5, scale: 0.3 }
+          : { x: -1.8, scale: 0.7 },
+      );
+      if (gameEndTimer.current) {
+        clearTimeout(gameEndTimer.current);
+        gameEndTimer.current = null;
+      }
+    } else {
+      // Game ended (won/lost) — wait 5s then hide overlay and reset Bob
+      if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
+      gameEndTimer.current = setTimeout(() => {
+        setGameState(null);
+        setScenePose(null);
+        gameEndTimer.current = null;
+      }, 5000);
+    }
+  }, []);
+
   // Subscribe to SSE for remote-triggered actions and AI responses
   // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {
@@ -383,33 +411,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
         }
 
         if (data.type === "game-state" && data.gameState) {
-          const gs = data.gameState as GameClientState;
-          setGameState(gs);
-
-          if (gs.status === "playing") {
-            // On mobile, move Bob off-screen (game overlay covers full canvas);
-            // on desktop, slide left to make room for the game panel.
-            // Note: checked once at game start; orientation changes mid-game
-            // won't re-evaluate — acceptable for hackathon scope.
-            const isMobile = window.innerWidth < 1024;
-            setScenePose(
-              isMobile
-                ? { x: 3.5, y: -2.5, scale: 0.3 }
-                : { x: -1.8, scale: 0.7 },
-            );
-            if (gameEndTimer.current) {
-              clearTimeout(gameEndTimer.current);
-              gameEndTimer.current = null;
-            }
-          } else {
-            // Game ended (won/lost) — wait 5s then hide overlay and reset Bob
-            if (gameEndTimer.current) clearTimeout(gameEndTimer.current);
-            gameEndTimer.current = setTimeout(() => {
-              setGameState(null);
-              setScenePose(null);
-              gameEndTimer.current = null;
-            }, 5000);
-          }
+          handleGameState(data.gameState as GameClientState);
           return;
         }
 
@@ -637,6 +639,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onEmote={handleEmote}
             onGesture={setGesture}
             onUserInteraction={handleUserInteraction}
+            onGameState={handleGameState}
             donations={donations}
           />
         ) : (

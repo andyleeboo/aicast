@@ -15,6 +15,7 @@ import type {
   EmoteCommand,
   DonationTier,
 } from "@/lib/types";
+import type { GameClientState } from "@/lib/games/game-types";
 
 const SLASH_COMMANDS: Record<string, { emote?: EmoteCommand; gesture?: GestureReaction; msg: string }> = {
   // Gestures
@@ -130,6 +131,7 @@ export function ChatPanel({
   onEmote,
   onGesture,
   onUserInteraction,
+  onGameState,
   donations,
 }: {
   channelId: string;
@@ -138,6 +140,7 @@ export function ChatPanel({
   onEmote?: (emote: EmoteCommand) => void;
   onGesture?: (gesture: GestureReaction) => void;
   onUserInteraction?: () => void;
+  onGameState?: (state: GameClientState) => void;
   donations?: DonationEvent[];
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -331,6 +334,7 @@ export function ChatPanel({
       .then((r) => r.json())
       .then((data) => {
         addSystemMessage(data.error ? data.error : formatResponse(data));
+        if (data.state) onGameState?.(data.state as GameClientState);
       })
       .catch(() => {});
   }
