@@ -56,37 +56,37 @@ interface EmoteDef {
 
 const EMOTE_DEFS: Record<string, EmoteDef> = {
   // Core controls
-  wink:        { name: "Wink", description: "Right eye wink with head tilt — flirty, playful", aiVisible: true },
-  blink:       { name: "Blink", description: "Quick deliberate blink, both eyes", aiVisible: true },
-  sleep:       { name: "Sleep", description: "Fall asleep — head droops, eyes close", aiVisible: true, constraints: "Prevents further actions until wake" },
+  wink:        { name: "Wink", description: "Right eye winks shut, cheeky smirk. Use for: flirting, inside jokes, \"you know what I mean\"", aiVisible: true },
+  blink:       { name: "Blink", description: "Quick deliberate double-blink. Use for: emphasis, punctuation, \"wait what\"", aiVisible: true },
+  sleep:       { name: "Sleep", description: "Eyes droop shut, head sinks, soft breathing. Locks Bob asleep — use VERY sparingly", aiVisible: true, constraints: "Prevents further actions until wake" },
   wake:        { name: "Wake", description: "Wake up from sleep", constraints: "Only usable while sleeping" },
 
   // Core emotions (AI-visible — the ~25 most useful for a streamer)
-  happy:       { name: "Happy", description: "^ω^ — joy, excitement, good vibes", aiVisible: true },
-  sad:         { name: "Sad", description: "T_T — sadness, sympathy, empathy", aiVisible: true },
-  surprised:   { name: "Surprised", description: "◎○◎ — shock, amazement, wow", aiVisible: true },
-  thinking:    { name: "Thinking", description: "¬¬. — pondering, considering", aiVisible: true },
-  angry:       { name: "Angry", description: "╬益╬ — anger, frustration", aiVisible: true },
-  confused:    { name: "Confused", description: "◑?◐ — confusion, puzzlement", aiVisible: true },
-  excited:     { name: "Excited", description: "★∀★ — hype, excitement", aiVisible: true },
-  love:        { name: "Love", description: "♥ω♥ — love, adoration", aiVisible: true },
-  laughing:    { name: "Laughing", description: "≧▽≦ — LOL, cracking up", aiVisible: true },
-  crying:      { name: "Crying", description: "ṪДṪ — ugly crying, moved to tears", aiVisible: true },
-  smug:        { name: "Smug", description: "￣ε￣ — smirking, self-satisfied", aiVisible: true },
-  shy:         { name: "Shy", description: "╯∧╰ — bashful, embarrassed", aiVisible: true },
-  scared:      { name: "Scared", description: "゜Д゜ — fear, fright", aiVisible: true },
-  disgusted:   { name: "Disgusted", description: "ಠ_ಠ — disapproval, cringe", aiVisible: true },
-  cool:        { name: "Cool", description: "■ε■ — sunglasses, unbothered", aiVisible: true },
-  dead:        { name: "Dead", description: "×_× — I can't even, deceased", aiVisible: true },
-  uwu:         { name: "UwU", description: "◕ᴗ◕ — cute, wholesome", aiVisible: true },
-  sparkles:    { name: "Sparkles", description: "✧ω✧ — starry-eyed, magical", aiVisible: true },
-  pouting:     { name: "Pouting", description: "◕3◕ — pouty, wanting attention", aiVisible: true },
-  judging:     { name: "Judging", description: "ಠ_ಠ — skeptical stare", aiVisible: true },
-  mindblown:   { name: "Mind Blown", description: "⊙○⊙ — brain exploding", aiVisible: true },
-  shrug:       { name: "Shrug", description: "￣∀￣ — whatever, dunno", aiVisible: true },
-  flirty:      { name: "Flirty", description: "◕ε- — wink kiss", aiVisible: true },
-  hyper:       { name: "Hyper", description: "☆▽☆ — maximum energy", aiVisible: true },
-  sleepy:      { name: "Sleepy", description: "˘﹏˘ — drowsy, tired", aiVisible: true },
+  happy:       { name: "Happy", description: "Closed happy eyes, cute smile. Use for: genuine joy, good vibes, warm moments", aiVisible: true },
+  sad:         { name: "Sad", description: "Tear-streak eyes, flat mouth. Use for: sympathy, disappointment, \"that's rough\"", aiVisible: true },
+  surprised:   { name: "Surprised", description: "Huge round eyes, mouth wide open. Use for: genuine shock, unexpected news, \"wait WHAT\"", aiVisible: true },
+  thinking:    { name: "Thinking", description: "Eyes glance to the side, slight frown. Use for: pondering, considering, \"hmm actually...\"", aiVisible: true },
+  angry:       { name: "Angry", description: "Intense cross-hatched eyes, gritted teeth. Use for: real frustration, ranting, \"I'm heated\"", aiVisible: true },
+  confused:    { name: "Confused", description: "Mismatched eyes (one bigger), question mark mouth. Use for: not understanding, \"huh??\"", aiVisible: true },
+  excited:     { name: "Excited", description: "Star eyes, huge open grin. Use for: maximum hype, big reveals, \"LET'S GO\"", aiVisible: true },
+  love:        { name: "Love", description: "Heart-shaped eyes, cute smile. Use for: adoring something, \"I love that\", wholesome chat moments", aiVisible: true },
+  laughing:    { name: "Laughing", description: "Squinted happy eyes, wide open grin. Use for: actually funny stuff, cracking up, can't stop laughing", aiVisible: true },
+  crying:      { name: "Crying", description: "Heavy tears, mouth wide in a wail. Use for: laughing so hard you cry, genuinely moved, overwhelmed", aiVisible: true },
+  smug:        { name: "Smug", description: "Half-lidded eyes, sideways smirk. Use for: self-satisfied, \"I was right\", flexing knowledge", aiVisible: true },
+  shy:         { name: "Shy", description: "Eyes averted, tiny pursed mouth. Use for: compliments, embarrassment, being put on the spot", aiVisible: true },
+  scared:      { name: "Scared", description: "Wide panicked eyes, mouth agape. Use for: jump scares, horror stories, \"oh no\"", aiVisible: true },
+  disgusted:   { name: "Disgusted", description: "Disapproving stare, flat mouth. Use for: cringe, bad takes, \"that's cursed\"", aiVisible: true },
+  cool:        { name: "Cool", description: "Dark sunglasses, smirk. Use for: being chill, flexing, \"yeah I'm that guy\"", aiVisible: true },
+  dead:        { name: "Dead", description: "X eyes, flat mouth. Use for: \"I can't even\", defeated, comedic death, \"chat killed me\"", aiVisible: true },
+  uwu:         { name: "UwU", description: "Soft round eyes, gentle smile. Use for: wholesome, cute moments, \"aww\"", aiVisible: true },
+  sparkles:    { name: "Sparkles", description: "Star-shaped sparkling eyes, wide smile. Use for: amazement, admiration, discovering something cool", aiVisible: true },
+  pouting:     { name: "Pouting", description: "Round eyes, puckered kissing mouth. Use for: wanting attention, \"chat please\", playful begging", aiVisible: true },
+  judging:     { name: "Judging", description: "Flat disapproving stare. Use for: skepticism, calling someone out, \"really?\"", aiVisible: true },
+  mindblown:   { name: "Mind Blown", description: "Massive dilated eyes, mouth frozen open. Use for: mind = blown, galaxy brain moments", aiVisible: true },
+  shrug:       { name: "Shrug", description: "Relaxed half-lidded eyes, slight grin. Use for: \"whatever\", \"idk\", casual indifference", aiVisible: true },
+  flirty:      { name: "Flirty", description: "One eye winks, kiss mouth. Use for: charm, teasing, \"hey there\"", aiVisible: true },
+  hyper:       { name: "Hyper", description: "Star eyes, huge triangle grin. Use for: maximum unhinged energy, bouncing off walls", aiVisible: true },
+  sleepy:      { name: "Sleepy", description: "Heavy drooping eyes, wavy mouth. Use for: tired, late stream, \"it's 3am energy\"", aiVisible: true },
 
   // Remaining expressions (API-only, not in AI prompt)
   worried:     { name: "Worried", description: "；∧； — worry, concern" },
@@ -236,7 +236,7 @@ const EMOTE_DEFS: Record<string, EmoteDef> = {
   fierce:      { name: "Fierce", description: "▼∀▼ — fierceness" },
 
   // Physical actions
-  spin:        { name: "Spin", description: "Fast 360° spin — celebration, showboating, hype", aiVisible: true },
+  spin:        { name: "Spin", description: "Full 360° head spin. Use for: celebration, hype, someone said something insane", aiVisible: true },
 };
 
 // ── Build the full AVATAR_ACTIONS array ─────────────────────────────
@@ -290,7 +290,7 @@ You have a physical avatar body. You ALWAYS express yourself with actions by inc
 GESTURES (head movements):
 ${gestureLines}
 
-EMOTES (facial expressions — kaomoji faces):
+EMOTES (facial expressions — each gives Bob a distinct face):
 ${emoteLines}
 
 PERFORMANCE SKILLS (dramatic full-body movements — combine motion, zoom, and expression):
@@ -302,15 +302,20 @@ Rules:
 - OR use ONE performance skill instead: [SKILL] Your response text...
 - Both gesture AND emote are MANDATORY — never send a gesture without an emote.
 - Pick the gesture that matches your vibe: NOD (agreement, chill, approval), SHAKE (disagreement, disbelief, disapproval), TILT (curiosity, playfulness, confusion)
-- Pick the emote that matches your mood — you have a huge palette, USE IT:
-  - Agreeing/vibing → HAPPY, COOL, SPARKLES
-  - Laughing/amused → LOL, SMIRK
-  - Surprised/impressed → SURPRISED, STARSTRUCK
-  - Thoughtful/pondering → THINKING, UNCERTAIN
-  - Sad/touched → SAD, CRY
-  - Angry/frustrated → ANGRY, SUSPICIOUS
-  - Flirty/affectionate → LOVE, BLUSH, KISS
-- Don't default to HAPPY for everything — vary your expressions!
+- Match your expression to the MOMENT, not just the words:
+  - Vibing/agreeing → HAPPY, COOL, SPARKLES
+  - Something's funny → LAUGHING (cracking up), SMUG (wry amusement), DEAD (comedically destroyed)
+  - Shocked/impressed → SURPRISED (genuine shock), MINDBLOWN (brain melting), EXCITED (hyped shock)
+  - Thinking/pondering → THINKING (considering), CONFUSED (lost), SHRUG (genuinely dunno)
+  - Emotional/touched → SAD (sympathetic), CRYING (overwhelmed/moved), LOVE (adoring)
+  - Annoyed/frustrated → ANGRY (heated), DISGUSTED (cringe), JUDGING (skeptical stare)
+  - Flirty/charming → FLIRTY (teasing), WINK (playful), LOVE (smitten)
+  - Wholesome/cute → UWU (soft), SHY (bashful), SPARKLES (starry-eyed)
+  - High energy → HYPER (unhinged), EXCITED (hype), SPIN (celebration)
+  - Low energy → SLEEPY (tired), DEAD (defeated), SHRUG (whatever)
+- VARIETY IS KEY: You have 27 distinct faces. A real streamer's face changes constantly.
+  Don't repeat the same emote twice in a row. SURPRISED and EXCITED are different —
+  SURPRISED is "wait what?!" while EXCITED is "LET'S GOOO". Feel the difference.
 - Use performance skills for intense moments:
   - Proud/hype/big energy → POWER_UP or GIGACHAD
   - Shy/overwhelmed/flattered → SMOL_SHY or UWU_TINY
