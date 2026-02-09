@@ -18,6 +18,14 @@ export interface Channel {
   streamer: Streamer;
 }
 
+// ── Donation types ───────────────────────────────────────────────────
+
+export type DonationTier = "blue" | "gold" | "red";
+
+export type MessagePriority = "normal" | "highlight" | "donation";
+
+// ── Chat types ───────────────────────────────────────────────────────
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -39,6 +47,8 @@ export function dbRowToChatMessage(row: MessageRow): ChatMessage {
     username: row.username ?? undefined,
   };
 }
+
+// ── Avatar types ─────────────────────────────────────────────────────
 
 export type GestureReaction = "yes" | "no" | "uncertain";
 
@@ -97,9 +107,7 @@ export type EmoteCommand =
   // Physical actions
   | "spin";
 
-export type MessagePriority = "normal" | "highlight" | "donation";
-
-export type DonationTier = "blue" | "gold" | "red";
+// ── Batch types ──────────────────────────────────────────────────────
 
 export interface BatchedChatMessage {
   id: string;
