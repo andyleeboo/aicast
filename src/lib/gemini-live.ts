@@ -3,6 +3,7 @@
  *
  * Current providers (tried in order):
  *  1. Gemini 2.5 Pro TTS  (highest quality, separate quota from Flash)
+ *  2. Gemini 2.5 Flash TTS (lower latency fallback)
  *
  * Audio format: 24 kHz mono 16-bit PCM (base64-encoded), matching
  * what the client audio player expects.
@@ -10,21 +11,12 @@
  * If ALL server providers fail or the rate budget is exhausted, the client
  * falls back to the browser Web Speech API (see broadcast-content.tsx).
  *
- * TTS_MODE env var controls behaviour:
- *  - "browser" (default) — skip server TTS entirely, client uses Web Speech API.
- *    Use this during development to conserve Gemini quota.
- *  - "server" — use Gemini TTS with sliding-window rate budgeting.
- *    Set this in production / during the live hackathon demo.
- *
- * Rate budgeting (server mode only): Gemini TTS free tier has a low daily
- * quota (~100 RPD). A sliding-window rate limiter conserves the budget by
- * skipping server TTS when calls are too frequent.
+ * Rate budgeting: Gemini TTS free tier has a low daily quota (~100 RPD).
+ * A sliding-window rate limiter conserves the budget by skipping server TTS
+ * when calls are too frequent. When over budget, the client falls back to the
+ * browser Web Speech API.
  */
 import { GoogleGenAI, Modality } from "@google/genai";
-
-// ── TTS mode toggle ─────────────────────────────────────────────────
-// "browser" = always Web Speech API (dev), "server" = Gemini TTS (prod)
-const TTS_MODE = (process.env.TTS_MODE ?? "browser") as "browser" | "server";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -38,11 +30,11 @@ export interface TtsProvider {
 
 // ── Rate budget ─────────────────────────────────────────────────────
 // Sliding window: allow MAX_PER_WINDOW calls within WINDOW_MS.
-// At 3 calls/60s, a demo can sustain ~50 min of continuous chat within
-// the 100 RPD free-tier limit. When over budget, streamSpeech returns
-// immediately and the client uses the Web Speech API fallback (zero-cost).
+// At 10 calls/60s, a hackathon demo can sustain heavy chat for ~10 min
+// within the 100 RPD free-tier limit. When over budget, streamSpeech
+// returns immediately and the client uses the Web Speech API fallback.
 
-const MAX_PER_WINDOW = 3;
+const MAX_PER_WINDOW = 10;
 const WINDOW_MS = 60_000;
 const callTimestamps: number[] = [];
 
@@ -130,14 +122,10 @@ export async function streamSpeech(
   onAudioChunk?: (base64Audio: string) => void,
   voice?: string,
 ): Promise<string | null> {
-  if (TTS_MODE === "browser") {
-    console.log("[tts] TTS_MODE=browser — skipping server TTS, client will use Web Speech API");
-    return null;
-  }
-
   if (!isWithinBudget()) {
+    const oldestAge = callTimestamps.length > 0 ? Math.round((Date.now() - callTimestamps[0]) / 1000) : 0;
     console.log(
-      `[tts] Rate budget exceeded (${callTimestamps.length}/${MAX_PER_WINDOW} in last ${WINDOW_MS / 1000}s) — skipping server TTS`,
+      `[tts] Rate budget exceeded (${callTimestamps.length}/${MAX_PER_WINDOW} in last ${WINDOW_MS / 1000}s, oldest call ${oldestAge}s ago) — client will use Web Speech API`,
     );
     return null;
   }
@@ -150,6 +138,7 @@ export async function streamSpeech(
   const voiceName = voice ?? DEFAULT_VOICE;
   const providers: TtsProvider[] = [
     createGeminiTtsProvider("gemini-2.5-pro-preview-tts", voiceName),
+    createGeminiTtsProvider("gemini-2.5-flash-preview-tts", voiceName),
   ];
 
   for (const provider of providers) {

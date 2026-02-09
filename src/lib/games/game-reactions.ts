@@ -15,11 +15,9 @@ import { emitAction } from "@/lib/action-bus";
 import { getHistory, pushHistory, acquireProcessingLock, releaseProcessingLock } from "@/lib/chat-queue";
 import { pauseIdle, resumeIdle } from "@/lib/idle-behavior";
 
-const STREAMER_ID = "late-night-ai";
-
 const LOCK_RETRY_MS = 2000;
 
-export async function triggerGameReaction(gameState: GameState): Promise<void> {
+export async function triggerGameReaction(gameState: GameState, channelId: string): Promise<void> {
   if (!acquireProcessingLock()) {
     await new Promise((r) => setTimeout(r, LOCK_RETRY_MS));
     if (!acquireProcessingLock()) {
@@ -29,7 +27,7 @@ export async function triggerGameReaction(gameState: GameState): Promise<void> {
   }
 
   try {
-    const channel = await getChannelFromDB(STREAMER_ID);
+    const channel = await getChannelFromDB(channelId);
     if (!channel) return;
 
     const history = getHistory();
@@ -77,7 +75,7 @@ export async function triggerGameReaction(gameState: GameState): Promise<void> {
     emitAction({
       type: "ai-response",
       id: responseId,
-      channelId: STREAMER_ID,
+      channelId,
       response,
       gesture,
       emote,
@@ -86,12 +84,12 @@ export async function triggerGameReaction(gameState: GameState): Promise<void> {
     });
 
     streamSpeech(response, (chunk) => {
-      emitAction({ type: "ai-audio-chunk", id: responseId, channelId: STREAMER_ID, audioData: chunk });
+      emitAction({ type: "ai-audio-chunk", id: responseId, channelId, audioData: chunk });
     })
-      .then(() => emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID }))
+      .then(() => emitAction({ type: "ai-audio-end", id: responseId, channelId }))
       .catch((err) => {
         console.error("[game-reactions] TTS error:", err);
-        emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID });
+        emitAction({ type: "ai-audio-end", id: responseId, channelId });
       })
       .finally(() => resumeIdle());
 
@@ -112,13 +110,14 @@ export async function triggerTwentyQQuestionReaction(
   gameState: TwentyQGameState,
   question: string,
   isGuess: boolean,
+  channelId: string,
 ): Promise<void> {
   if (!acquireProcessingLock()) {
     await new Promise((r) => setTimeout(r, LOCK_RETRY_MS));
     if (!acquireProcessingLock()) {
       // Can't get lock — resolve with fallback so game isn't stuck
       console.log("[game-reactions:20q] Lock held — fallback resolve");
-      resolveQuestionOnManager("KINDA", 3, false);
+      resolveQuestionOnManager(channelId, "KINDA", 3, false);
       return;
     }
   }
@@ -132,7 +131,7 @@ export async function triggerTwentyQQuestionReaction(
     } catch (err) {
       console.error("[game-reactions:20q] Gemini API error:", err);
       // Fallback resolve so game isn't stuck with pendingQuestion: true
-      resolveQuestionOnManager("KINDA", 3, false);
+      resolveQuestionOnManager(channelId, "KINDA", 3, false);
       return;
     }
 
@@ -140,7 +139,7 @@ export async function triggerTwentyQQuestionReaction(
     const { answer, warmth, response, isCorrectGuess } = parseTwentyQResponse(raw, isGuess);
 
     // Update game state via manager
-    const endedGame = resolveQuestionOnManager(answer, warmth, isCorrectGuess);
+    const endedGame = resolveQuestionOnManager(channelId, answer, warmth, isCorrectGuess);
 
     // Speak Bob's reaction
     if (response) {
@@ -158,17 +157,17 @@ export async function triggerTwentyQQuestionReaction(
       emitAction({
         type: "ai-response",
         id: responseId,
-        channelId: STREAMER_ID,
+        channelId,
         response,
       });
 
       streamSpeech(response, (chunk) => {
-        emitAction({ type: "ai-audio-chunk", id: responseId, channelId: STREAMER_ID, audioData: chunk });
+        emitAction({ type: "ai-audio-chunk", id: responseId, channelId, audioData: chunk });
       })
-        .then(() => emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID }))
+        .then(() => emitAction({ type: "ai-audio-end", id: responseId, channelId }))
         .catch((err) => {
           console.error("[game-reactions:20q] TTS error:", err);
-          emitAction({ type: "ai-audio-end", id: responseId, channelId: STREAMER_ID });
+          emitAction({ type: "ai-audio-end", id: responseId, channelId });
         })
         .finally(() => resumeIdle());
 
@@ -177,7 +176,7 @@ export async function triggerTwentyQQuestionReaction(
       // If game ended, fire a delayed end-game reaction so the answer TTS plays first
       if (endedGame) {
         setTimeout(() => {
-          triggerGameReaction(endedGame).catch(console.error);
+          triggerGameReaction(endedGame, channelId).catch(console.error);
         }, 3000);
       }
     }

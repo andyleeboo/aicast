@@ -167,7 +167,7 @@ export async function processChatBatch(batch: BatchedChatMessage[], channelId: s
     },
   ];
 
-  const activeGame = getActiveGame();
+  const activeGame = getActiveGame(channelId);
   const gamePrompt = activeGame ? buildGameSystemPrompt(activeGame) : "";
 
   const systemPrompt =

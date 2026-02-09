@@ -104,7 +104,7 @@ async function maybeSpeakProactively() {
     const history = getHistory();
     const messages: ChatMessage[] = [...history];
 
-    const activeGame = getActiveGame();
+    const activeGame = getActiveGame(activeChannelId);
     const gamePrompt = activeGame ? buildGameSystemPrompt(activeGame) : "";
 
     const systemPrompt =
