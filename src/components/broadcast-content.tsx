@@ -316,6 +316,14 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }
   }, []);
 
+  // On mount, check if a game is already running on the server
+  useEffect(() => {
+    fetch("/api/game")
+      .then((r) => r.json())
+      .then((data) => { if (data.state) handleGameState(data.state); })
+      .catch(() => {});
+  }, [handleGameState]);
+
   // Subscribe to SSE for remote-triggered actions and AI responses
   // EventSource auto-reconnects natively; we track state for UI feedback
   useEffect(() => {

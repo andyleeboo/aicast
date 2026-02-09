@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
   if (action === "start") {
     const result = startGame(game ?? "hangman");
     if ("error" in result) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
+      // Include current game state so the client can recover
+      const current = getActiveGameClientState();
+      return NextResponse.json({ error: result.error, state: current }, { status: 400 });
     }
     const gameState = getActiveGame();
     if (gameState) triggerGameReaction(gameState).catch(console.error);
