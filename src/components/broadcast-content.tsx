@@ -255,8 +255,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
       // The bubble already shows text (set on ai-response), so just trigger speech.
       if (currentResponseText.current) {
         console.log("[audio] No server audio — falling back to Web Speech API");
+        trackEvent("tts_played", { provider: "browser_fallback" });
         speakWithBrowser(currentResponseText.current, currentResponseLang.current);
       }
+    } else if (gotServerAudio.current) {
+      trackEvent("tts_played", { provider: "server" });
     }
     gotServerAudio.current = false;
     currentResponseText.current = null;
@@ -325,8 +328,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     }
   }, []);
 
-  // On mount, check if a game is already running on the server
+  // On mount: track session start + check if a game is already running
   useEffect(() => {
+    trackEvent("stream_session_start", {
+      channel: channel.id,
+      platform: /Mobi|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
+    });
     fetch("/api/game")
       .then((r) => r.json())
       .then((data) => { if (data.state) handleGameState(data.state); })

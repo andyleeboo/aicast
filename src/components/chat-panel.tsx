@@ -405,7 +405,11 @@ export function ChatPanel({
     if (slashCmd) {
       addSystemMessage(slashCmd.msg.replace("{name}", streamerName));
       setInput("");
-      trackEvent("slash_command_used", { command: lower });
+      trackEvent("slash_command_used", {
+        command: lower,
+        type: slashCmd.emote ? "emote" : "gesture",
+        action: slashCmd.emote ?? slashCmd.gesture ?? lower,
+      });
       if (slashCmd.emote) onEmote?.(slashCmd.emote);
       if (slashCmd.gesture) onGesture?.(slashCmd.gesture);
       return;
@@ -415,6 +419,7 @@ export function ChatPanel({
     const check = validateMessage(text);
     if (!check.valid) {
       setError(check.error ?? "Message rejected");
+      trackEvent("message_blocked", { reason: check.error ?? "unknown" });
       setTimeout(() => setError(null), 3000);
       return;
     }
@@ -497,7 +502,7 @@ export function ChatPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setShowHelp(true)}
+            onClick={() => { setShowHelp(true); trackEvent("help_modal_opened"); }}
             className="rounded-lg px-2 py-1 text-xs font-bold text-muted transition-colors hover:bg-white/10 hover:text-foreground"
             title="Commands & Games"
           >
@@ -592,7 +597,7 @@ export function ChatPanel({
         >
           <button
             type="button"
-            onClick={() => setShowHelp(true)}
+            onClick={() => { setShowHelp(true); trackEvent("help_modal_opened"); }}
             className="rounded-lg bg-white/10 px-2.5 py-2 text-sm font-bold text-muted transition-colors hover:text-foreground lg:hidden"
             title="Commands & Games"
           >
