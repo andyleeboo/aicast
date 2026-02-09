@@ -3,6 +3,9 @@
 import type { GameClientState } from "@/lib/games/game-types";
 import { HangmanBoard } from "./hangman-board";
 import { TwentyQBoard } from "./twentyq-board";
+import { TriviaBoard } from "./trivia-board";
+import { WyrBoard } from "./wyr-board";
+import { HotColdBoard } from "./hotcold-board";
 
 interface GameOverlayProps {
   gameState: GameClientState;
@@ -11,6 +14,9 @@ interface GameOverlayProps {
 const GAME_LABELS: Record<string, string> = {
   hangman: "Hangman",
   twentyq: "20 Questions",
+  trivia: "Trivia Quiz",
+  wyr: "Would You Rather",
+  hotcold: "Hot or Cold",
 };
 
 export function GameOverlay({ gameState }: GameOverlayProps) {
@@ -36,6 +42,15 @@ export function GameOverlay({ gameState }: GameOverlayProps) {
           )}
           {gameState.type === "twentyq" && (
             <TwentyQBoard data={gameState.data} status={gameState.status} />
+          )}
+          {gameState.type === "trivia" && (
+            <TriviaBoard data={gameState.data} status={gameState.status} />
+          )}
+          {gameState.type === "wyr" && (
+            <WyrBoard data={gameState.data} status={gameState.status} />
+          )}
+          {gameState.type === "hotcold" && (
+            <HotColdBoard data={gameState.data} status={gameState.status} />
           )}
         </div>
       </div>

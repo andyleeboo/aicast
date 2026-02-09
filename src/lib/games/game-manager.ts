@@ -1,4 +1,12 @@
-import type { GameState, GameClientState, GameType, TwentyQGameState } from "./game-types";
+import type {
+  GameState,
+  GameClientState,
+  GameType,
+  TwentyQGameState,
+  TriviaGameState,
+  WyrGameState,
+  HotColdGameState,
+} from "./game-types";
 import {
   startGame as startHangman,
   processGuess as hangmanGuess,
@@ -11,6 +19,25 @@ import {
   resolveQuestion as twentyqResolveQuestion,
   toClientState as twentyqToClient,
 } from "./twentyq";
+import {
+  startGame as startTrivia,
+  submitAnswer as triviaSubmitAnswer,
+  resolveAnswer as triviaResolveAnswer,
+  toClientState as triviaToClient,
+} from "./trivia";
+import {
+  startGame as startWyr,
+  castVote as wyrCastVote,
+  closeVoting as wyrCloseVoting,
+  resolveRound as wyrResolveRound,
+  toClientState as wyrToClient,
+} from "./wyr";
+import {
+  startGame as startHotCold,
+  submitGuess as hotcoldSubmitGuess,
+  resolveGuess as hotcoldResolveGuess,
+  toClientState as hotcoldToClient,
+} from "./hotcold";
 import { emitAction } from "@/lib/action-bus";
 
 const COOLDOWN_MS = 30_000;
@@ -33,12 +60,19 @@ function getState(): GameManagerState {
 /** Shallow-copy a GameState, preserving the discriminated union. */
 function snapshotGame(state: GameState): GameState {
   if (state.type === "hangman") return { ...state, data: { ...state.data } };
+  if (state.type === "twentyq") return { ...state, data: { ...state.data, history: [...state.data.history] } };
+  if (state.type === "trivia") return { ...state, data: { ...state.data, roundResults: [...state.data.roundResults] } };
+  if (state.type === "wyr") return { ...state, data: { ...state.data, roundResults: [...state.data.roundResults] } };
+  // hotcold
   return { ...state, data: { ...state.data, history: [...state.data.history] } };
 }
 
 function toClientStateDispatch(state: GameState): GameClientState {
   if (state.type === "hangman") return hangmanToClient(state);
-  return twentyqToClient(state);
+  if (state.type === "twentyq") return twentyqToClient(state);
+  if (state.type === "trivia") return triviaToClient(state);
+  if (state.type === "wyr") return wyrToClient(state);
+  return hotcoldToClient(state);
 }
 
 function emitGameState(clientState: GameClientState): void {
@@ -70,11 +104,11 @@ export function startGame(type: GameType): GameClientState | { error: string } {
     return { error: `Cooldown: wait ${remaining}s before starting a new game` };
   }
 
-  if (type === "hangman") {
-    state.activeGame = startHangman();
-  } else {
-    state.activeGame = startTwentyQ();
-  }
+  if (type === "hangman") state.activeGame = startHangman();
+  else if (type === "twentyq") state.activeGame = startTwentyQ();
+  else if (type === "trivia") state.activeGame = startTrivia();
+  else if (type === "wyr") state.activeGame = startWyr();
+  else state.activeGame = startHotCold();
 
   const clientState = toClientStateDispatch(state.activeGame!);
   emitGameState(clientState);
@@ -155,6 +189,171 @@ export function resolveQuestionOnManager(
   emitGameState(clientState);
 
   // Auto-end on win/loss
+  if (mgr.activeGame.status !== "playing") {
+    const snapshot = snapshotGame(mgr.activeGame);
+    mgr.lastEndedAt = Date.now();
+    mgr.activeGame = null;
+    return snapshot;
+  }
+
+  return null;
+}
+
+// ── Trivia-specific: async answer flow ──────────────────────────────
+
+export function submitTriviaAnswer(
+  answer: string,
+): { state: GameClientState; gameStateForReaction: TriviaGameState } | { error: string } {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
+    return { error: "No active game" };
+  }
+  if (mgr.activeGame.type !== "trivia") {
+    return { error: "Not a trivia game" };
+  }
+  if (mgr.activeGame.data.pendingAnswer) {
+    return { error: "Bob is still judging... hold on" };
+  }
+  if (mgr.activeGame.data.currentRound >= mgr.activeGame.data.maxRounds) {
+    return { error: "No rounds left!" };
+  }
+
+  mgr.activeGame = triviaSubmitAnswer(mgr.activeGame, answer);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  const gameStateForReaction = snapshotGame(mgr.activeGame) as TriviaGameState;
+  return { state: clientState, gameStateForReaction };
+}
+
+export function resolveTriviaOnManager(correct: boolean): GameState | null {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.type !== "trivia") {
+    return null;
+  }
+
+  mgr.activeGame = triviaResolveAnswer(mgr.activeGame, correct);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  if (mgr.activeGame.status !== "playing") {
+    const snapshot = snapshotGame(mgr.activeGame);
+    mgr.lastEndedAt = Date.now();
+    mgr.activeGame = null;
+    return snapshot;
+  }
+
+  return null;
+}
+
+// ── WYR-specific: voting + round flow ───────────────────────────────
+
+export function voteWyr(
+  choice: "a" | "b",
+  voter: string,
+): { state: GameClientState; alreadyVoted: boolean } | { error: string } {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
+    return { error: "No active game" };
+  }
+  if (mgr.activeGame.type !== "wyr") {
+    return { error: "Not a Would You Rather game" };
+  }
+  if (!mgr.activeGame.data.votingOpen) {
+    return { error: "Voting is closed — type /next" };
+  }
+
+  const result = wyrCastVote(mgr.activeGame, choice, voter);
+  mgr.activeGame = result.state;
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  return { state: clientState, alreadyVoted: result.alreadyVoted };
+}
+
+export function closeWyrVoting(): { state: GameClientState; gameStateForReaction: WyrGameState } | { error: string } {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
+    return { error: "No active game" };
+  }
+  if (mgr.activeGame.type !== "wyr") {
+    return { error: "Not a Would You Rather game" };
+  }
+  if (!mgr.activeGame.data.votingOpen) {
+    return { error: "Voting is already closed" };
+  }
+
+  mgr.activeGame = wyrCloseVoting(mgr.activeGame);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  const gameStateForReaction = snapshotGame(mgr.activeGame) as WyrGameState;
+  return { state: clientState, gameStateForReaction };
+}
+
+export function resolveWyrOnManager(
+  bobsPick: "A" | "B",
+  bobsReason: string,
+): GameState | null {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.type !== "wyr") {
+    return null;
+  }
+
+  mgr.activeGame = wyrResolveRound(mgr.activeGame, bobsPick, bobsReason);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  if (mgr.activeGame.status !== "playing") {
+    const snapshot = snapshotGame(mgr.activeGame);
+    mgr.lastEndedAt = Date.now();
+    mgr.activeGame = null;
+    return snapshot;
+  }
+
+  return null;
+}
+
+// ── Hot or Cold-specific: async guess flow ──────────────────────────
+
+export function submitHotColdGuess(
+  guessValue: string,
+): { state: GameClientState; gameStateForReaction: HotColdGameState } | { error: string } {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.status !== "playing") {
+    return { error: "No active game" };
+  }
+  if (mgr.activeGame.type !== "hotcold") {
+    return { error: "Not a Hot or Cold game" };
+  }
+  if (mgr.activeGame.data.pendingGuess) {
+    return { error: "Bob is still judging... hold on" };
+  }
+  if (mgr.activeGame.data.guessesUsed >= mgr.activeGame.data.maxGuesses) {
+    return { error: "No guesses left!" };
+  }
+
+  mgr.activeGame = hotcoldSubmitGuess(mgr.activeGame, guessValue);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
+  const gameStateForReaction = snapshotGame(mgr.activeGame) as HotColdGameState;
+  return { state: clientState, gameStateForReaction };
+}
+
+export function resolveHotColdOnManager(
+  warmth: number,
+  isCorrect: boolean,
+): GameState | null {
+  const mgr = getState();
+  if (!mgr.activeGame || mgr.activeGame.type !== "hotcold") {
+    return null;
+  }
+
+  mgr.activeGame = hotcoldResolveGuess(mgr.activeGame, warmth, isCorrect);
+  const clientState = toClientStateDispatch(mgr.activeGame);
+  emitGameState(clientState);
+
   if (mgr.activeGame.status !== "playing") {
     const snapshot = snapshotGame(mgr.activeGame);
     mgr.lastEndedAt = Date.now();
