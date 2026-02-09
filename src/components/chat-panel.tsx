@@ -132,6 +132,7 @@ export function ChatPanel({
   onGesture,
   onUserInteraction,
   onGameState,
+  onMessageSent,
   donations,
 }: {
   channelId: string;
@@ -141,6 +142,7 @@ export function ChatPanel({
   onGesture?: (gesture: GestureReaction) => void;
   onUserInteraction?: () => void;
   onGameState?: (state: GameClientState) => void;
+  onMessageSent?: () => void;
   donations?: DonationEvent[];
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -471,6 +473,7 @@ export function ChatPanel({
     };
     setMessages((prev) => [...prev, userMsg]);
     trackEvent("chat_message_sent");
+    onMessageSent?.();
 
     fetch("/api/chat", {
       method: "POST",

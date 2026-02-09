@@ -10,9 +10,14 @@ import {
   releaseProcessingLock,
   pushHistory,
   touchActivity,
+  getLastActivityTimestamp,
 } from "@/lib/chat-queue";
 import { processChatBatch } from "@/lib/chat-queue-init";
+import { emitAction } from "@/lib/action-bus";
 import type { BatchedChatMessage } from "@/lib/types";
+
+/** If chat has been quiet for this long, emit "ai-thinking" immediately. */
+const SILENCE_THRESHOLD_MS = 8_000;
 
 let lastPollAt = new Date().toISOString();
 const processedIds = new Set<string>();
@@ -67,6 +72,12 @@ export async function checkForNewMessages(): Promise<void> {
         content: `${msg.username}: ${msg.content}`,
         timestamp: msg.timestamp,
       });
+    }
+
+    // If chat was quiet, broadcast "thinking" immediately so clients see Bob react
+    const silenceMs = Date.now() - getLastActivityTimestamp();
+    if (silenceMs > SILENCE_THRESHOLD_MS) {
+      emitAction({ type: "ai-thinking", id: "thinking-" + crypto.randomUUID() });
     }
 
     touchActivity();

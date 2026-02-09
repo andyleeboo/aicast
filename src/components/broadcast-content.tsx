@@ -383,6 +383,12 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
           return;
         }
 
+        if (data.type === "ai-thinking") {
+          bubbleRef.current.showLoading();
+          setGesture("uncertain");
+          return;
+        }
+
         if (maintenanceModeRef.current && data.type === "ai-response") {
           return; // Ignore stale AI responses during maintenance
         }
@@ -664,6 +670,10 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
             onGesture={setGesture}
             onUserInteraction={handleUserInteraction}
             onGameState={handleGameState}
+            onMessageSent={() => {
+              bubbleRef.current.showLoading();
+              setGesture("uncertain");
+            }}
             donations={donations}
           />
         ) : (

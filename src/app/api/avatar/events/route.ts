@@ -16,7 +16,7 @@ export const maxDuration = 60;
 const GRACEFUL_CLOSE_MS = (maxDuration - 5) * 1000; // 55s
 
 // Chat poll + keepalive combined interval
-const POLL_MS = 3_000;
+const POLL_MS = 1_500;
 
 export async function GET() {
   const encoder = new TextEncoder();
