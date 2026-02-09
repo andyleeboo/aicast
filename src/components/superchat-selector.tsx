@@ -48,7 +48,7 @@ export function SuperChatSelector({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute bottom-full left-0 z-20 mb-2 w-64 rounded-2xl bg-surface p-4 shadow-xl ring-1 ring-border">
+    <div className="absolute bottom-full right-0 z-20 mb-2 w-64 rounded-2xl bg-surface p-4 shadow-xl ring-1 ring-border">
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm font-semibold">Super Chat</span>
         <button
