@@ -41,6 +41,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   const [donations, setDonations] = useState<DonationEvent[]>([]);
   const sceneResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameStateRef = useRef(gameState);
   // undefined = not loaded yet, null = no username stored
   const [username, setUsername] = useState<string | null | undefined>(undefined);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_WIDTH);
@@ -100,6 +101,9 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   useEffect(() => {
     maintenanceModeRef.current = maintenanceMode;
   }, [maintenanceMode]);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   const player = useAudioPlayer({
     onEnd: () => {
@@ -205,7 +209,11 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
   // Web Speech API fallback — speaks text via the browser when server TTS fails
   const speakWithBrowser = useCallback((text: string, langHint?: string) => {
     if (mutedRef.current) { console.log("[web-speech] Skipped — muted"); return; }
-    if (typeof window === "undefined" || !window.speechSynthesis) { console.log("[web-speech] Skipped — speechSynthesis unavailable"); return; }
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      console.log("[web-speech] speechSynthesis unavailable — showing text for reading");
+      bubbleRef.current.showForReading(text);
+      return;
+    }
     const lang = langHint || detectLang(text);
     console.log("[web-speech] Speaking:", text.substring(0, 60) + "...", "lang:", lang);
     window.speechSynthesis.cancel(); // stop any prior utterance
@@ -296,7 +304,7 @@ export function BroadcastContent({ channel }: BroadcastContentProps) {
     setGameState(gs);
 
     // Analytics: track game lifecycle
-    if (gs.status === "playing" && !gameState) {
+    if (gs.status === "playing" && !gameStateRef.current) {
       trackEvent("game_started", { game_type: gs.type, game_id: gs.gameId });
     } else if (gs.status === "won") {
       trackEvent("game_won", { game_type: gs.type, game_id: gs.gameId });

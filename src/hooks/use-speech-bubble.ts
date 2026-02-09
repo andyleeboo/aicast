@@ -44,6 +44,7 @@ export function useSpeechBubble(): UseSpeechBubbleReturn {
   const readTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const maintenanceRef = useRef(false);
+  const responseTextRef = useRef<string | null>(null);
 
   const clearAllTimers = useCallback(() => {
     if (lingerTimer.current) { clearTimeout(lingerTimer.current); lingerTimer.current = null; }
@@ -55,6 +56,7 @@ export function useSpeechBubble(): UseSpeechBubbleReturn {
     clearAllTimers();
     setText(null);
     setIsSpeaking(false);
+    responseTextRef.current = null;
   }, [clearAllTimers]);
 
   const showLoading = useCallback(() => {
@@ -65,6 +67,7 @@ export function useSpeechBubble(): UseSpeechBubbleReturn {
   const showResponse = useCallback((response: string) => {
     clearAllTimers();
     setText(response);
+    responseTextRef.current = response;
 
     // Safety net: if speakingStarted/speakingEnded never fire,
     // auto-clear after SAFETY_NET_MS so the bubble doesn't stick forever.
@@ -99,11 +102,13 @@ export function useSpeechBubble(): UseSpeechBubbleReturn {
     if (safetyTimer.current) { clearTimeout(safetyTimer.current); safetyTimer.current = null; }
     if (readTimer.current) { clearTimeout(readTimer.current); readTimer.current = null; }
 
-    // Keep text visible briefly after speech ends, then clear
+    // Keep text visible after speech ends — scale linger to text length
+    const charCount = responseTextRef.current?.length ?? 0;
+    const linger = Math.max(LINGER_MS, charCount * MS_PER_CHAR);
     if (lingerTimer.current) clearTimeout(lingerTimer.current);
     lingerTimer.current = setTimeout(() => {
       if (!maintenanceRef.current) setText(null);
-    }, LINGER_MS);
+    }, linger);
   }, []);
 
   const showMaintenance = useCallback((msg: string) => {
